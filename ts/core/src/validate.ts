@@ -3,6 +3,7 @@ import type {
   AnalysisMethod,
   AnalyzerRun,
   EvidenceReport,
+  ExternalReference,
   HotZone,
   Measurement,
 } from "./evidence.js";
@@ -124,11 +125,26 @@ export function validateMeasurement(v: unknown, path = "measurement"): Measureme
 
 export function validateAnalyzerRun(v: unknown, path = "analyzer"): AnalyzerRun {
   if (!isObject(v)) throw new EvidenceError("expected object", path);
-  return {
+  const run: { -readonly [K in keyof AnalyzerRun]: AnalyzerRun[K] } = {
     tool: reqNonEmpty(v.tool, `${path}.tool`),
     version: reqString(v.version, `${path}.version`),
     method: reqEnum<AnalysisMethod>(v.method, ANALYSIS_METHODS, `${path}.method`),
   };
+  if (v.externalReferences !== undefined) {
+    run.externalReferences = reqArray(v.externalReferences, `${path}.externalReferences`).map(
+      (ref, i) => {
+        const p = `${path}.externalReferences[${i}]`;
+        if (!isObject(ref)) throw new EvidenceError("expected object", p);
+        const out: { -readonly [K in keyof ExternalReference]: ExternalReference[K] } = {
+          source: reqNonEmpty(ref.source, `${p}.source`),
+          queriedAt: reqNonEmpty(ref.queriedAt, `${p}.queriedAt`),
+        };
+        if (ref.version !== undefined) out.version = reqString(ref.version, `${p}.version`);
+        return out;
+      },
+    );
+  }
+  return run;
 }
 
 function validateSarifResult(v: unknown, path: string): SarifResult {

@@ -1,4 +1,4 @@
-import type { AnalysisMethod, Measurement } from "./evidence.js";
+import type { AnalysisMethod, ExternalReference, Measurement } from "./evidence.js";
 import type { SarifRun } from "./sarif.js";
 
 /** Immutable context handed to every analyzer at run time. */
@@ -21,6 +21,8 @@ export interface AnalyzerResult {
   readonly run: SarifRun;
   readonly measurements: readonly Measurement[];
   readonly method: AnalysisMethod;
+  /** Outside sources consulted, if any — surfaced on the report's AnalyzerRun. */
+  readonly externalReferences?: readonly ExternalReference[];
 }
 
 /**

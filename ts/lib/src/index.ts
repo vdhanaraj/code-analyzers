@@ -16,6 +16,8 @@ export { computeHotZones } from "./hotzones.js";
 export type { HotZoneOptions } from "./hotzones.js";
 export { makeResult, makeRun } from "./sarif-build.js";
 export type { ResultInput } from "./sarif-build.js";
+export { ingestSarifRun } from "./ingest-sarif.js";
+export type { IngestOptions } from "./ingest-sarif.js";
 export { defaultRegistry } from "./builtins.js";
 export { sha256 } from "./hash.js";
 export { normalizeRepoPath, toPosix } from "./paths.js";

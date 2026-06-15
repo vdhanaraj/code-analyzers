@@ -81,7 +81,12 @@ export class CodeAnalyzer {
       this.validateAtSeam(analyzer.id, result.run, result.measurements);
       runs.push(result.run);
       measurements.push(...result.measurements);
-      analyzers.push({ tool: analyzer.id, version: analyzer.version, method: result.method });
+      analyzers.push({
+        tool: analyzer.id,
+        version: analyzer.version,
+        method: result.method,
+        ...(result.externalReferences ? { externalReferences: result.externalReferences } : {}),
+      });
     }
 
     const sarif = { version: SARIF_VERSION, runs };

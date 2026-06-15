@@ -34,10 +34,28 @@ export interface Measurement {
 }
 
 /** Per-analyzer provenance + the determinism disclosure for one run. */
+/**
+ * An outside, evolving source an analyzer consulted (a CVE database, a remote
+ * ruleset). Its presence means the run is **deterministic but not necessarily
+ * reproducible**: the same code can yield different results later because the
+ * *source* changed, not the code. Determinism (`method`) and reproducibility
+ * are orthogonal — this records the latter honestly rather than forcing it.
+ */
+export interface ExternalReference {
+  /** Human-readable source, e.g. "OSV (osv.dev)". */
+  readonly source: string;
+  /** ISO-8601 instant the source was consulted. Accounting, not an input. */
+  readonly queriedAt: string;
+  /** DB/ruleset revision, if the tool exposes a pinnable one. */
+  readonly version?: string;
+}
+
 export interface AnalyzerRun {
   readonly tool: string;
   readonly version: string;
   readonly method: AnalysisMethod;
+  /** Outside sources consulted, if any (see {@link ExternalReference}). */
+  readonly externalReferences?: readonly ExternalReference[];
 }
 
 /**

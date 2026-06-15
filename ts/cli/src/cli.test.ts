@@ -43,6 +43,25 @@ describe("parseArgs", () => {
     });
   });
 
+  it("supports opt-in security analyzers and threads their config", () => {
+    const parsed = parseArgs([
+      "--analyzers",
+      "secrets,vulnerabilities",
+      "--secrets-bin",
+      "/usr/bin/gitleaks",
+      "--vuln-subcommand",
+      "scan",
+    ]);
+    if (parsed.kind !== "run") throw new Error("expected run");
+    expect(parsed.options.analyzers.map((a) => a.id)).toEqual(["secrets", "vulnerabilities"]);
+    expect(parsed.options.analyzers.find((a) => a.id === "secrets")?.config).toMatchObject({
+      bin: "/usr/bin/gitleaks",
+    });
+    expect(parsed.options.analyzers.find((a) => a.id === "vulnerabilities")?.config).toMatchObject({
+      subcommand: "scan",
+    });
+  });
+
   it("rejects unknown analyzers and non-positive min-signals", () => {
     expect(parseArgs(["--analyzers", "magic"])).toMatchObject({ kind: "error" });
     expect(parseArgs(["--min-signals", "0"])).toMatchObject({ kind: "error" });

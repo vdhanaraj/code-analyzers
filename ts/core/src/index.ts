@@ -31,6 +31,7 @@ export type {
   AnalysisMethod,
   AnalyzerRun,
   EvidenceReport,
+  ExternalReference,
   HotZone,
   Measurement,
 } from "./evidence.js";

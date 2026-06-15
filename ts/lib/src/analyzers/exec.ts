@@ -27,6 +27,14 @@ export function exec(
           const code = error.code;
           if (typeof code !== "number") {
             // Spawn failure (e.g. command not found) — not a tool-reported result.
+            if (code === "ENOENT") {
+              reject(
+                new Error(
+                  `"${command}" not found — install it or point the analyzer at its binary (its --*-bin flag)`,
+                ),
+              );
+              return;
+            }
             reject(error);
             return;
           }

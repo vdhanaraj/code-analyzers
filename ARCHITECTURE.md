@@ -113,11 +113,28 @@ auditing service.
   role (domain logic) but as an **in-process library, not an HTTP service**.
 - **`ts/cli`** — a thin wrapper over `ts/lib`. Plays the `app` role; the user-facing surface is a **CLI,
   not a web app**.
-- **Analyzers behind a stable `Analyzer` interface at a single wiring point.** Registered: **coverage**
-  (the strategic primitive — compounding downstream work), **lint** (wraps Biome), and **duplication**
-  (wraps jscpd — token-based clone detection, language-agnostic). Each normalizes its tool's output to a
-  SARIF run; tools that already emit SARIF pass through. Adding an analyzer = a module plus a registry
-  line; nothing else changes.
+- **Analyzers behind a stable `Analyzer` interface at a single wiring point.** Run by default (binaries
+  come as npm dev-deps): **coverage** (the strategic primitive), **lint** (Biome), **duplication** (jscpd).
+  **Opt-in** (wrap external binaries the user installs; not in the default set so a missing binary never
+  breaks a default run): **secrets** (gitleaks) and **vulnerabilities** (osv-scanner). Analyzers are named
+  by **role, not tool** (per CONVENTIONS), matching `lint`/`coverage`. Each normalizes its tool's output to
+  a SARIF run via the generic ingest adapter; SARIF-native tools pass through. Adding an analyzer = a module
+  plus a registry line.
+
+### Security analyzers — ingest, redaction, accounting
+
+The **generic SARIF ingest** (`ingestSarifRun`) is the leverage point: since the security ecosystem speaks
+SARIF, we normalize the *format* once (project to our modeled subset, collapse to one run under the role
+id, rewrite URIs repo-relative) and any SARIF-emitting tool plugs in. Two consequences shape the model:
+
+- **Secret safety.** A report is *meant* to be fed to an LLM, so a secret echoed into it is a leak. The
+  `secrets` analyzer **reconstructs minimal results** (rule + severity + location only) and never carries
+  gitleaks' match/snippet/fingerprint fields — secrets cannot reach the report by construction.
+- **Deterministic ≠ reproducible.** `vulnerabilities` (osv-scanner) is deterministic — no inference — but
+  queries a *live, evolving* CVE database, so the same code can yield different results later because the
+  world changed, not the code. We do not force reproducibility; we **account** for it via an
+  `externalReference` (`source` + `queriedAt` + optional pinned `version`) on the run. This is a second,
+  orthogonal honesty axis alongside `method`.
 
 ## Divergences from CONVENTIONS
 
@@ -157,6 +174,11 @@ AnalyzerRun {
   tool:    string                // = SARIF run tool.driver.name
   version: string
   method:  "deterministic" | "inferred"   // all current analyzers deterministic
+  externalReferences?: [         // outside sources consulted (e.g. OSV); makes a
+    { source: string,            //   run deterministic-but-not-reproducible.
+      queriedAt: string,         //   Orthogonal to `method`.
+      version?: string }
+  ]
 }
 
 Address {                        // normalized coordinate (measurements + hot zones)

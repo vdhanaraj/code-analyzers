@@ -17,7 +17,11 @@ export interface RunOptions {
   readonly output: OutputFormat;
 }
 
-const KNOWN_ANALYZERS = new Set(["coverage", "lint", "duplication"]);
+// coverage/lint/duplication run by default (npm-provided binaries). secrets and
+// vulnerabilities wrap external binaries (gitleaks, osv-scanner) so they are
+// opt-in via --analyzers.
+const DEFAULT_ANALYZERS = ["coverage", "lint", "duplication"];
+const KNOWN_ANALYZERS = new Set([...DEFAULT_ANALYZERS, "secrets", "vulnerabilities"]);
 const OUTPUT_FORMATS = new Set<OutputFormat>(["human", "report", "simple", "sarif"]);
 
 function splitList(value: string): string[] {
@@ -66,12 +70,12 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 
   const requested = flags.has("analyzers")
     ? splitList(flags.get("analyzers") as string)
-    : ["coverage", "lint", "duplication"];
+    : DEFAULT_ANALYZERS;
   const unknown = requested.filter((id) => !KNOWN_ANALYZERS.has(id));
   if (unknown.length > 0) {
     return {
       kind: "error",
-      message: `unknown analyzer(s): ${unknown.join(", ")}. Known: coverage, lint, duplication`,
+      message: `unknown analyzer(s): ${unknown.join(", ")}. Known: ${[...KNOWN_ANALYZERS].join(", ")}`,
     };
   }
 
@@ -90,13 +94,22 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       if (flags.has("lint-bin")) config.bin = flags.get("lint-bin");
       if (flags.has("lint-cwd")) config.cwd = flags.get("lint-cwd");
       if (flags.has("lint-paths")) config.paths = splitList(flags.get("lint-paths") as string);
-    } else {
-      // duplication
+    } else if (id === "duplication") {
       if (flags.has("dup-bin")) config.bin = flags.get("dup-bin");
       if (flags.has("dup-cwd")) config.cwd = flags.get("dup-cwd");
       if (flags.has("dup-paths")) config.paths = splitList(flags.get("dup-paths") as string);
       if (flags.has("dup-min-tokens")) config.minTokens = Number(flags.get("dup-min-tokens"));
       if (flags.has("dup-min-lines")) config.minLines = Number(flags.get("dup-min-lines"));
+    } else if (id === "secrets") {
+      if (flags.has("secrets-bin")) config.bin = flags.get("secrets-bin");
+      if (flags.has("secrets-cwd")) config.cwd = flags.get("secrets-cwd");
+      if (flags.has("secrets-path")) config.path = flags.get("secrets-path");
+    } else {
+      // vulnerabilities
+      if (flags.has("vuln-bin")) config.bin = flags.get("vuln-bin");
+      if (flags.has("vuln-cwd")) config.cwd = flags.get("vuln-cwd");
+      if (flags.has("vuln-path")) config.path = flags.get("vuln-path");
+      if (flags.has("vuln-subcommand")) config.subcommand = flags.get("vuln-subcommand");
     }
     return { id, config };
   });
@@ -160,7 +173,17 @@ OPTIONS
                --dup-min-tokens <n>      min token run to call a clone (def: 50)
                --dup-min-lines <n>       min line run to call a clone (def: 5)
 
+  Opt-in (wrap external binaries you install yourself; redacted/accounted):
+  secrets:         --secrets-bin <path>  gitleaks binary (default: "gitleaks")
+  (gitleaks)       --secrets-cwd <path>  working dir (default: repo)
+                   --secrets-path <p>    path to scan (default: ".")
+  vulnerabilities: --vuln-bin <path>     osv-scanner binary (default: "osv-scanner")
+  (osv-scanner)    --vuln-cwd <path>     working dir (default: repo)
+                   --vuln-path <p>       path to scan (default: ".")
+                   --vuln-subcommand <s> leading subcommand, e.g. "scan" (osv v2)
+
 EXAMPLES
   code-analyzers . --analyzers lint --lint-cwd ts
   code-analyzers . --coverage-report ts/coverage/coverage-final.json --json
+  code-analyzers . --analyzers secrets,vulnerabilities --output sarif
 `;

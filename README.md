@@ -8,11 +8,14 @@ other. It produces evidence *for* downstream inference; it contains **no LLM hop
 - **What it is and why** → [ARCHITECTURE.md](ARCHITECTURE.md) (the durable truth)
 - **House style** → [CONVENTIONS.md](CONVENTIONS.md) (project-agnostic conventions)
 
-> Status: **v2 (schema v2).** Coverage, lint, and duplication analyzers behind
-> one shape, emitting an `EvidenceReport` that **wraps SARIF** (native findings)
-> and adds what SARIF can't carry — numeric measurements and a deterministic/
-> inferred disclosure — plus a deterministic hot-zone rollup, over a thin CLI.
-> The wrapper schema is expected to churn (v2 → v3–4) during early iteration.
+> Status: **v2 (schema v2).** Analyzers behind one shape — **coverage, lint,
+> duplication** (default) plus opt-in **secrets** (gitleaks) and
+> **vulnerabilities** (osv-scanner) — emitting an `EvidenceReport` that **wraps
+> SARIF** (native findings) and adds what SARIF can't carry: numeric
+> measurements, a deterministic/inferred disclosure, and an external-reference
+> note for tools that query live data. Plus a deterministic hot-zone rollup and
+> four output projections, over a thin CLI. The wrapper schema is expected to
+> churn (v2 → v3–4) during early iteration.
 
 ## Quickstart
 
