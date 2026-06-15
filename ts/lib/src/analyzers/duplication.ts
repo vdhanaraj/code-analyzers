@@ -11,7 +11,7 @@ import type {
 import { normalizeRepoPath } from "../paths.js";
 import { makeResult, makeRun } from "../sarif-build.js";
 import { CommandNotFoundError, exec } from "./exec.js";
-import { unavailableResult } from "./null-state.js";
+import { erroredResult, unavailableResult } from "./null-state.js";
 
 /**
  * Duplication analyzer — wraps jscpd (token-based copy/paste detection).
@@ -91,8 +91,9 @@ export function createDuplicationAnalyzer(config: Readonly<Record<string, unknow
 
       let report: JscpdReport = {};
       try {
+        let execResult: Awaited<ReturnType<typeof exec>>;
         try {
-          await exec(
+          execResult = await exec(
             cfg.bin,
             [
               ...cfg.paths,
@@ -120,10 +121,28 @@ export function createDuplicationAnalyzer(config: Readonly<Record<string, unknow
         try {
           raw = await readFile(join(outDir, "jscpd-report.json"), "utf8");
         } catch (e) {
-          // jscpd writes no report when it finds nothing — treat as zero.
           if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
         }
-        if (raw !== undefined) report = JSON.parse(raw) as JscpdReport;
+        if (raw === undefined) {
+          // No report: fine when jscpd exited cleanly (nothing to analyze), but a
+          // non-zero exit with no output is a broken run, not zero duplication.
+          if (execResult.code !== 0) {
+            return erroredResult(
+              "duplication",
+              VERSION,
+              `jscpd exited with code ${execResult.code} and wrote no report`,
+              { stderr: execResult.stderr },
+            );
+          }
+        } else {
+          try {
+            report = JSON.parse(raw) as JscpdReport;
+          } catch {
+            return erroredResult("duplication", VERSION, "could not parse jscpd report", {
+              stderr: execResult.stderr,
+            });
+          }
+        }
       } finally {
         await rm(outDir, { recursive: true, force: true });
       }

@@ -19,7 +19,7 @@ export type { ResultInput } from "./sarif-build.js";
 export { ingestSarifRun } from "./ingest-sarif.js";
 export type { IngestOptions } from "./ingest-sarif.js";
 export { CommandNotFoundError } from "./analyzers/exec.js";
-export { unavailableResult } from "./analyzers/null-state.js";
+export { erroredResult, unavailableResult } from "./analyzers/null-state.js";
 export { defaultRegistry } from "./builtins.js";
 export { sha256 } from "./hash.js";
 export { normalizeRepoPath, toPosix } from "./paths.js";

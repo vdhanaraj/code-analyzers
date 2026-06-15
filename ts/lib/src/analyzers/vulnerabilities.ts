@@ -9,7 +9,7 @@ import type {
 } from "@code-analyzers/core";
 import { ingestSarifRun } from "../ingest-sarif.js";
 import { CommandNotFoundError, exec } from "./exec.js";
-import { unavailableResult } from "./null-state.js";
+import { erroredResult, unavailableResult } from "./null-state.js";
 
 /**
  * Vulnerabilities analyzer — wraps osv-scanner (id `vulnerabilities`).
@@ -106,8 +106,9 @@ export function createVulnerabilitiesAnalyzer(config: Readonly<Record<string, un
       const outFile = join(outDir, "osv.sarif");
       const queriedAt = new Date().toISOString();
       try {
+        let execResult: Awaited<ReturnType<typeof exec>>;
         try {
-          await exec(
+          execResult = await exec(
             cfg.bin,
             [
               ...(cfg.subcommand ? [cfg.subcommand] : []),
@@ -131,9 +132,20 @@ export function createVulnerabilitiesAnalyzer(config: Readonly<Record<string, un
         } catch (e) {
           if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
         }
-        return raw === undefined
-          ? emptyResult(ctx, queriedAt)
-          : buildVulnerabilitiesResult(raw, ctx, cfg.cwd, queriedAt);
+        if (raw === undefined) {
+          // osv-scanner exits non-zero when it finds vulns, but then writes the
+          // report. No report + non-zero exit is a broken run.
+          if (execResult.code !== 0) {
+            return erroredResult(
+              ID,
+              VERSION,
+              `osv-scanner exited with code ${execResult.code} and wrote no report`,
+              { stderr: execResult.stderr },
+            );
+          }
+          return emptyResult(ctx, queriedAt);
+        }
+        return buildVulnerabilitiesResult(raw, ctx, cfg.cwd, queriedAt);
       } finally {
         await rm(outDir, { recursive: true, force: true });
       }

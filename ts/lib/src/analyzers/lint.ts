@@ -10,7 +10,7 @@ import type {
 import { normalizeRepoPath } from "../paths.js";
 import { makeResult, makeRun } from "../sarif-build.js";
 import { CommandNotFoundError, exec } from "./exec.js";
-import { unavailableResult } from "./null-state.js";
+import { erroredResult, unavailableResult } from "./null-state.js";
 
 /**
  * Lint analyzer — wraps Biome's JSON reporter.
@@ -112,7 +112,15 @@ export function createLintAnalyzer(config: Readonly<Record<string, unknown>>): A
         throw e;
       }
 
-      const parsed = JSON.parse(result.stdout) as { diagnostics?: unknown };
+      // A failed run with no parseable output is errored, not a clean pass.
+      let parsed: { diagnostics?: unknown };
+      try {
+        parsed = JSON.parse(result.stdout) as { diagnostics?: unknown };
+      } catch {
+        return erroredResult("lint", VERSION, "could not parse Biome JSON output", {
+          stderr: result.stderr,
+        });
+      }
       const diagnostics = Array.isArray(parsed.diagnostics) ? parsed.diagnostics : [];
 
       const results: SarifResult[] = [];

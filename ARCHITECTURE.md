@@ -146,8 +146,11 @@ not a crash:
   `errored` (tool present but the run failed). A non-`ok` run is a **null state** — empty findings plus a
   `diagnostic`.
 - **`unavailable`** carries an OS-agnostic **install pointer** (`diagnostic.helpUrl`) — the remediation is
-  "install it". **`errored`** is a *different* case (the tool is installed; something else went wrong):
-  it carries the failure detail, not an install link.
+  "install it". **`errored`** is a *different* case (the tool is installed; the run broke — unparseable
+  output, or a non-zero exit that produced nothing): installing won't help, so there is **no** install
+  link. It carries the failure detail plus the tool's **stderr** (truncated) for debuggability — except
+  `secrets`, which suppresses stderr since it could echo a matched secret. A non-zero exit with *parseable*
+  output is still `ok` (tools routinely exit non-zero when they have findings).
 - The orchestrator never lets one analyzer crash the whole run — other analyzers still produce their
   evidence. (A *contract* violation — our own bug — still fails loud.)
 - The CLI **fails closed**: any non-`ok` analyzer → non-zero exit (3), with the report still emitted so the

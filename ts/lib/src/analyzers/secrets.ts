@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { Analyzer, AnalyzerContext, AnalyzerResult, SarifResult } from "@code-analyzers/core";
 import { ingestSarifRun } from "../ingest-sarif.js";
 import { CommandNotFoundError, exec } from "./exec.js";
-import { unavailableResult } from "./null-state.js";
+import { erroredResult, unavailableResult } from "./null-state.js";
 
 /**
  * Secrets analyzer — wraps gitleaks (id `secrets`, per role-based naming).
@@ -104,8 +104,9 @@ export function createSecretsAnalyzer(config: Readonly<Record<string, unknown>>)
       const outDir = await mkdtemp(join(tmpdir(), "ca-gitleaks-"));
       const outFile = join(outDir, "gitleaks.sarif");
       try {
+        let execResult: Awaited<ReturnType<typeof exec>>;
         try {
-          await exec(
+          execResult = await exec(
             cfg.bin,
             [
               "dir",
@@ -130,7 +131,19 @@ export function createSecretsAnalyzer(config: Readonly<Record<string, unknown>>)
         } catch (e) {
           if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
         }
-        return raw === undefined ? EMPTY_RESULT(ctx) : buildSecretsResult(raw, ctx, cfg.cwd);
+        if (raw === undefined) {
+          // No report + non-zero exit is a broken run. stderr is suppressed for
+          // secrets — it could echo a matched secret.
+          if (execResult.code !== 0) {
+            return erroredResult(
+              ID,
+              VERSION,
+              `gitleaks exited with code ${execResult.code} and wrote no report`,
+            );
+          }
+          return EMPTY_RESULT(ctx);
+        }
+        return buildSecretsResult(raw, ctx, cfg.cwd);
       } finally {
         await rm(outDir, { recursive: true, force: true });
       }
