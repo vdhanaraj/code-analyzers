@@ -41,6 +41,22 @@ attention guide), **report** (full JSON — for foundation models), **simple**
 SARIF log — for GitHub code scanning and viewers). It contains **no LLM hop** —
 the artifacts are evidence *for* a downstream consumer's single inference hop.
 
+**Selecting analyzers** is a four-tier cascade — `--analyzers` › `code-analyzers.json`
+(or a `code-analyzers` key in `package.json`) › auto-detect from repo contents ›
+built-in default. So a zero-flag `code-analyzers <repo>` "just works" for a novice
+(auto-detect, reporting any uninstalled tool with an install link rather than
+failing), while a committed config standardizes the set for a team. Only an
+explicit `--analyzers` selection fails closed on a missing tool. Example config:
+
+```jsonc
+// code-analyzers.json
+{ "analyzers": {
+  "lint": { "cwd": "ts" },
+  "coverage": { "bin": "vitest", "cwd": "ts" },
+  "vulnerabilities": { "required": true }   // pin to fail closed even from config
+} }
+```
+
 ## Ports — none
 
 v1 is a **CLI + library** with no listening services, so it claims **no port block** (see

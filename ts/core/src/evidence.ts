@@ -91,6 +91,13 @@ export interface HotZone {
   readonly reasons: readonly string[];
 }
 
+/** How the analyzer set was chosen, recorded so selection is never "magic". */
+export interface SelectionInfo {
+  readonly source: "cli" | "config" | "auto-detect" | "default";
+  /** Per-analyzer-id explanation of why it was selected. */
+  readonly reasons?: Readonly<Record<string, string>>;
+}
+
 /**
  * The canonical artifact — a wrapper *around* SARIF, not a replacement for it.
  *
@@ -111,4 +118,6 @@ export interface EvidenceReport {
   readonly measurements: readonly Measurement[];
   readonly analyzers: readonly AnalyzerRun[];
   readonly hotZones: readonly HotZone[];
+  /** How the analyzer set was chosen (transparency for auto-detect/config). */
+  readonly selection?: SelectionInfo;
 }

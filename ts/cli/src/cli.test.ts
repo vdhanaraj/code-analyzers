@@ -5,18 +5,14 @@ import { renderHuman, renderSarif, renderSimple } from "./render.js";
 import { run } from "./run.js";
 
 describe("parseArgs", () => {
-  it("defaults to all analyzers, minSignals 1, human output, current dir", () => {
+  it("with no --analyzers, leaves selection to the cascade (requested undefined)", () => {
     const parsed = parseArgs([]);
     expect(parsed).toMatchObject({
       kind: "run",
       options: { repoRoot: ".", minSignals: 1, output: "human" },
     });
     if (parsed.kind === "run") {
-      expect(parsed.options.analyzers.map((a) => a.id)).toEqual([
-        "coverage",
-        "lint",
-        "duplication",
-      ]);
+      expect(parsed.options.requested).toBeUndefined();
     }
   });
 
@@ -30,21 +26,15 @@ describe("parseArgs", () => {
     expect(parseArgs(["--output", "yaml"])).toMatchObject({ kind: "error" });
   });
 
-  it("threads analyzer config across coverage/lint/duplication", () => {
+  it("gathers per-analyzer config from flags (applied to whatever is selected)", () => {
     const parsed = parseArgs(["--threshold", "50", "--lint-cwd", "ts", "--dup-min-tokens", "30"]);
     if (parsed.kind !== "run") throw new Error("expected run");
-    expect(parsed.options.analyzers.find((a) => a.id === "coverage")?.config).toMatchObject({
-      threshold: 50,
-    });
-    expect(parsed.options.analyzers.find((a) => a.id === "lint")?.config).toMatchObject({
-      cwd: "ts",
-    });
-    expect(parsed.options.analyzers.find((a) => a.id === "duplication")?.config).toMatchObject({
-      minTokens: 30,
-    });
+    expect(parsed.options.configs.coverage).toMatchObject({ threshold: 50 });
+    expect(parsed.options.configs.lint).toMatchObject({ cwd: "ts" });
+    expect(parsed.options.configs.duplication).toMatchObject({ minTokens: 30 });
   });
 
-  it("supports opt-in security analyzers and threads their config", () => {
+  it("records --analyzers as the requested set and threads opt-in config", () => {
     const parsed = parseArgs([
       "--analyzers",
       "secrets,vulnerabilities",
@@ -54,13 +44,9 @@ describe("parseArgs", () => {
       "scan",
     ]);
     if (parsed.kind !== "run") throw new Error("expected run");
-    expect(parsed.options.analyzers.map((a) => a.id)).toEqual(["secrets", "vulnerabilities"]);
-    expect(parsed.options.analyzers.find((a) => a.id === "secrets")?.config).toMatchObject({
-      bin: "/usr/bin/gitleaks",
-    });
-    expect(parsed.options.analyzers.find((a) => a.id === "vulnerabilities")?.config).toMatchObject({
-      subcommand: "scan",
-    });
+    expect(parsed.options.requested).toEqual(["secrets", "vulnerabilities"]);
+    expect(parsed.options.configs.secrets).toMatchObject({ bin: "/usr/bin/gitleaks" });
+    expect(parsed.options.configs.vulnerabilities).toMatchObject({ subcommand: "scan" });
   });
 
   it("rejects unknown analyzers and non-positive min-signals", () => {

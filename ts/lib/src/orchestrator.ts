@@ -8,6 +8,7 @@ import {
   SARIF_VERSION,
   SCHEMA_VERSION,
   type SarifRun,
+  type SelectionInfo,
   validateEvidenceReport,
   validateMeasurement,
   validateSarifLog,
@@ -19,6 +20,13 @@ import { AnalyzerRegistry } from "./registry.js";
 export interface AnalyzerSpec {
   readonly id: string;
   readonly config?: Readonly<Record<string, unknown>>;
+  /**
+   * Whether a non-`ok` outcome should fail closed. True for explicit CLI
+   * selection ("you asked for it"); false for config/auto-detected analyzers,
+   * which skip-with-note instead. The orchestrator ignores this; consumers (the
+   * CLI exit code) use it.
+   */
+  readonly required?: boolean;
 }
 
 export interface CodeAnalyzerOptions {
@@ -32,6 +40,8 @@ export interface CodeAnalyzerOptions {
   readonly registry?: AnalyzerRegistry;
   /** Minimum distinct tools that must flag a file to make it a hot zone. */
   readonly minSignals?: number;
+  /** Recorded on the report for transparency (how the set was chosen). */
+  readonly selection?: SelectionInfo;
 }
 
 /** Thrown when an analyzer emits evidence that violates the contract. */
@@ -60,6 +70,7 @@ export class CodeAnalyzer {
   private readonly specs: readonly AnalyzerSpec[];
   private readonly registry: AnalyzerRegistry;
   private readonly minSignals: number;
+  private readonly selection?: SelectionInfo;
 
   constructor(options: CodeAnalyzerOptions) {
     this.repoRoot = resolve(options.repoRoot);
@@ -67,6 +78,7 @@ export class CodeAnalyzer {
     this.specs = options.analyzers;
     this.registry = options.registry ?? new AnalyzerRegistry();
     this.minSignals = options.minSignals ?? 1;
+    this.selection = options.selection;
   }
 
   async run(): Promise<EvidenceReport> {
@@ -118,6 +130,7 @@ export class CodeAnalyzer {
       measurements,
       analyzers,
       hotZones: computeHotZones(sarif, this.repo, { minSignals: this.minSignals }),
+      ...(this.selection ? { selection: this.selection } : {}),
     };
     // Final gate: the assembled report must itself satisfy the contract.
     return validateEvidenceReport(report);

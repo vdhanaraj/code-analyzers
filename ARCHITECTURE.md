@@ -138,6 +138,25 @@ id, rewrite URIs repo-relative) and any SARIF-emitting tool plugs in. Two conseq
   `externalReference` (`source` + `queriedAt` + optional pinned `version`) on the run. This is a second,
   orthogonal honesty axis alongside `method`.
 
+### Selection — how analyzers get chosen
+
+For a developer who doesn't know the tools, *which analyzers run* should not require knowing flags. Selection
+is a **four-tier cascade**; the first tier that yields a set wins:
+
+1. **CLI** — `--analyzers <list>`. Explicit and **required** (fails closed if a selected tool is missing —
+   you asked for it).
+2. **Config file** — `code-analyzers.json` (preferred) or a `code-analyzers` key in `package.json`; the
+   repo's declared standard. **Soft** (skip-with-note) unless an entry pins `"required": true`.
+3. **Auto-detect** — inferred from repo contents (test script → coverage; JS/TS → lint + duplication;
+   lockfile → vulnerabilities; `.git` → secrets). **Soft.** Turnkey for novices.
+4. **Built-in default** — coverage, lint, duplication. The floor: a zero-flag run always does something.
+
+**Source-based strictness** is the elegant part: only *explicit* selection fails closed; config/auto-detected
+analyzers that can't run are reported (with install pointers) but don't fail the run — so auto-detect never
+punishes a novice for a tool they didn't ask for. Per-analyzer config from CLI flags layers onto whatever the
+cascade selects (so `--lint-cwd ts` works in auto mode). Selection is recorded on the report
+(`selection: { source, reasons }`) so it is never "magic" — the artifact says what was chosen and why.
+
 ### Resilience — a missing tool is not a pass
 
 For developers who may not have every tool installed, a tool that *should* run but can't must never look

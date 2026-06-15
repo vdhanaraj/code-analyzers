@@ -21,5 +21,7 @@ export type { IngestOptions } from "./ingest-sarif.js";
 export { CommandNotFoundError } from "./analyzers/exec.js";
 export { erroredResult, unavailableResult } from "./analyzers/null-state.js";
 export { defaultRegistry } from "./builtins.js";
+export { autoDetect, loadConfig, resolveSelection } from "./selection.js";
+export type { ResolvedSelection, ResolveOptions } from "./selection.js";
 export { sha256 } from "./hash.js";
 export { normalizeRepoPath, toPosix } from "./paths.js";

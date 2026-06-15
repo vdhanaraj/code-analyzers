@@ -45,6 +45,10 @@ function flattenFindings(report: EvidenceReport): FlatFinding[] {
 export function renderHuman(report: EvidenceReport): string {
   const lines: string[] = [];
   lines.push(`code-analyzers · repo "${report.repo}" · schema v${report.schemaVersion}`);
+  if (report.selection) {
+    const ids = report.analyzers.map((a) => a.tool).join(", ");
+    lines.push(`selected via ${report.selection.source}: ${ids || "(none)"}`);
+  }
 
   const byTool = new Map<string, number>();
   let total = 0;
@@ -100,6 +104,7 @@ export function renderSimple(report: EvidenceReport): string {
   return JSON.stringify({
     repo: report.repo,
     schemaVersion: report.schemaVersion,
+    ...(report.selection ? { selection: report.selection.source } : {}),
     analyzers: report.analyzers.map((a) => ({
       tool: a.tool,
       status: a.status,

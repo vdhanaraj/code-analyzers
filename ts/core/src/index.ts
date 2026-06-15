@@ -36,6 +36,7 @@ export type {
   ExternalReference,
   HotZone,
   Measurement,
+  SelectionInfo,
 } from "./evidence.js";
 export type { Analyzer, AnalyzerContext, AnalyzerResult } from "./analyzer.js";
 export {

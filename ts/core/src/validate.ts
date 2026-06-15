@@ -235,6 +235,13 @@ export function validateSarifLog(v: unknown, path = "sarif"): SarifLog {
   return { version: SARIF_VERSION, runs };
 }
 
+function validateReasons(v: unknown, path: string): Record<string, string> {
+  if (!isObject(v)) throw new EvidenceError("expected object", path);
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(v)) out[key] = reqString(value, `${path}.${key}`);
+  return out;
+}
+
 function validateHotZone(v: unknown, path: string): HotZone {
   if (!isObject(v)) throw new EvidenceError("expected object", path);
   return {
@@ -274,5 +281,25 @@ export function validateEvidenceReport(v: unknown, path = "report"): EvidenceRep
   const hotZones = reqArray(v.hotZones, `${path}.hotZones`).map((z, i) =>
     validateHotZone(z, `${path}.hotZones[${i}]`),
   );
-  return { schemaVersion: SCHEMA_VERSION, repo, sarif, measurements, analyzers, hotZones };
+  const report: { -readonly [K in keyof EvidenceReport]: EvidenceReport[K] } = {
+    schemaVersion: SCHEMA_VERSION,
+    repo,
+    sarif,
+    measurements,
+    analyzers,
+    hotZones,
+  };
+  if (v.selection !== undefined) {
+    if (!isObject(v.selection)) throw new EvidenceError("expected object", `${path}.selection`);
+    const source = reqEnum(
+      v.selection.source,
+      ["cli", "config", "auto-detect", "default"] as const,
+      `${path}.selection.source`,
+    );
+    report.selection =
+      v.selection.reasons !== undefined
+        ? { source, reasons: validateReasons(v.selection.reasons, `${path}.selection.reasons`) }
+        : { source };
+  }
+  return report;
 }

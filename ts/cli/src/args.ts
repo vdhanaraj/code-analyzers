@@ -1,5 +1,3 @@
-import type { AnalyzerSpec } from "@code-analyzers/lib";
-
 /** Parsed CLI invocation, or a request for help, or a usage error. */
 export type ParsedArgs =
   | { readonly kind: "help" }
@@ -12,18 +10,18 @@ export type OutputFormat = "human" | "report" | "simple" | "sarif";
 export interface RunOptions {
   readonly repoRoot: string;
   readonly repo?: string;
-  readonly analyzers: readonly AnalyzerSpec[];
+  /** Ids from `--analyzers`, if given. Undefined → resolve via config/auto-detect. */
+  readonly requested?: readonly string[];
+  /** Per-analyzer config gathered from flags, applied to whatever is selected. */
+  readonly configs: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
   readonly minSignals: number;
   readonly output: OutputFormat;
-  /** When false (default), exit non-zero if any analyzer did not run. */
+  /** When false (default), exit non-zero if a required analyzer did not run. */
   readonly allowDegraded: boolean;
 }
 
-// coverage/lint/duplication run by default (npm-provided binaries). secrets and
-// vulnerabilities wrap external binaries (gitleaks, osv-scanner) so they are
-// opt-in via --analyzers.
-const DEFAULT_ANALYZERS = ["coverage", "lint", "duplication"];
-const KNOWN_ANALYZERS = new Set([...DEFAULT_ANALYZERS, "secrets", "vulnerabilities"]);
+export const KNOWN_ANALYZER_IDS = ["coverage", "lint", "duplication", "secrets", "vulnerabilities"];
+const KNOWN_ANALYZERS = new Set(KNOWN_ANALYZER_IDS);
 const OUTPUT_FORMATS = new Set<OutputFormat>(["human", "report", "simple", "sarif"]);
 
 function splitList(value: string): string[] {
@@ -78,15 +76,16 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 
   const repoRoot = positionals[0] ?? ".";
 
-  const requested = flags.has("analyzers")
-    ? splitList(flags.get("analyzers") as string)
-    : DEFAULT_ANALYZERS;
-  const unknown = requested.filter((id) => !KNOWN_ANALYZERS.has(id));
-  if (unknown.length > 0) {
-    return {
-      kind: "error",
-      message: `unknown analyzer(s): ${unknown.join(", ")}. Known: ${[...KNOWN_ANALYZERS].join(", ")}`,
-    };
+  let requested: string[] | undefined;
+  if (flags.has("analyzers")) {
+    requested = splitList(flags.get("analyzers") as string);
+    const unknown = requested.filter((id) => !KNOWN_ANALYZERS.has(id));
+    if (unknown.length > 0) {
+      return {
+        kind: "error",
+        message: `unknown analyzer(s): ${unknown.join(", ")}. Known: ${KNOWN_ANALYZER_IDS.join(", ")}`,
+      };
+    }
   }
 
   const minSignalsRaw = flags.get("min-signals");
@@ -95,50 +94,50 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     return { kind: "error", message: "--min-signals must be a positive integer" };
   }
 
-  const analyzers: AnalyzerSpec[] = requested.map((id) => {
-    const config: Record<string, unknown> = {};
-    if (id === "coverage") {
-      if (flags.has("coverage-bin")) config.bin = flags.get("coverage-bin");
-      if (flags.has("coverage-args")) config.args = splitList(flags.get("coverage-args") as string);
-      if (flags.has("coverage-cwd")) config.cwd = flags.get("coverage-cwd");
-      if (flags.has("coverage-report")) config.report = flags.get("coverage-report");
-      if (flags.has("threshold")) config.threshold = Number(flags.get("threshold"));
-      if (booleans.has("coverage-skip-run")) config.skipRun = true;
-    } else if (id === "lint") {
-      if (flags.has("lint-bin")) config.bin = flags.get("lint-bin");
-      if (flags.has("lint-cwd")) config.cwd = flags.get("lint-cwd");
-      if (flags.has("lint-paths")) config.paths = splitList(flags.get("lint-paths") as string);
-    } else if (id === "duplication") {
-      if (flags.has("dup-bin")) config.bin = flags.get("dup-bin");
-      if (flags.has("dup-cwd")) config.cwd = flags.get("dup-cwd");
-      if (flags.has("dup-paths")) config.paths = splitList(flags.get("dup-paths") as string);
-      if (flags.has("dup-min-tokens")) config.minTokens = Number(flags.get("dup-min-tokens"));
-      if (flags.has("dup-min-lines")) config.minLines = Number(flags.get("dup-min-lines"));
-    } else if (id === "secrets") {
-      if (flags.has("secrets-bin")) config.bin = flags.get("secrets-bin");
-      if (flags.has("secrets-cwd")) config.cwd = flags.get("secrets-cwd");
-      if (flags.has("secrets-path")) config.path = flags.get("secrets-path");
-    } else {
-      // vulnerabilities
-      if (flags.has("vuln-bin")) config.bin = flags.get("vuln-bin");
-      if (flags.has("vuln-cwd")) config.cwd = flags.get("vuln-cwd");
-      if (flags.has("vuln-path")) config.path = flags.get("vuln-path");
-      if (flags.has("vuln-subcommand")) config.subcommand = flags.get("vuln-subcommand");
-    }
-    return { id, config };
-  });
+  // Per-analyzer config from flags, applied to whatever the cascade selects.
+  const set = (config: Record<string, unknown>, key: string, flag: string, list = false) => {
+    if (flags.has(flag))
+      config[key] = list ? splitList(flags.get(flag) as string) : flags.get(flag);
+  };
+  const coverage: Record<string, unknown> = {};
+  set(coverage, "bin", "coverage-bin");
+  set(coverage, "args", "coverage-args", true);
+  set(coverage, "cwd", "coverage-cwd");
+  set(coverage, "report", "coverage-report");
+  if (flags.has("threshold")) coverage.threshold = Number(flags.get("threshold"));
+  if (booleans.has("coverage-skip-run")) coverage.skipRun = true;
+  const lint: Record<string, unknown> = {};
+  set(lint, "bin", "lint-bin");
+  set(lint, "cwd", "lint-cwd");
+  set(lint, "paths", "lint-paths", true);
+  const duplication: Record<string, unknown> = {};
+  set(duplication, "bin", "dup-bin");
+  set(duplication, "cwd", "dup-cwd");
+  set(duplication, "paths", "dup-paths", true);
+  if (flags.has("dup-min-tokens")) duplication.minTokens = Number(flags.get("dup-min-tokens"));
+  if (flags.has("dup-min-lines")) duplication.minLines = Number(flags.get("dup-min-lines"));
+  const secrets: Record<string, unknown> = {};
+  set(secrets, "bin", "secrets-bin");
+  set(secrets, "cwd", "secrets-cwd");
+  set(secrets, "path", "secrets-path");
+  const vulnerabilities: Record<string, unknown> = {};
+  set(vulnerabilities, "bin", "vuln-bin");
+  set(vulnerabilities, "cwd", "vuln-cwd");
+  set(vulnerabilities, "path", "vuln-path");
+  set(vulnerabilities, "subcommand", "vuln-subcommand");
+  const configs = { coverage, lint, duplication, secrets, vulnerabilities };
 
   // Output format: --output <fmt>, with --json kept as an alias for `report`.
   let output: OutputFormat = booleans.has("json") ? "report" : "human";
   if (flags.has("output")) {
-    const requested = flags.get("output") as string;
-    if (!OUTPUT_FORMATS.has(requested as OutputFormat)) {
+    const fmt = flags.get("output") as string;
+    if (!OUTPUT_FORMATS.has(fmt as OutputFormat)) {
       return {
         kind: "error",
-        message: `unknown --output "${requested}". Known: human, report, simple, sarif`,
+        message: `unknown --output "${fmt}". Known: human, report, simple, sarif`,
       };
     }
-    output = requested as OutputFormat;
+    output = fmt as OutputFormat;
   }
 
   return {
@@ -146,7 +145,8 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     options: {
       repoRoot,
       ...(flags.has("repo") ? { repo: flags.get("repo") } : {}),
-      analyzers,
+      ...(requested ? { requested } : {}),
+      configs,
       minSignals,
       output,
       allowDegraded: booleans.has("allow-degraded"),
@@ -166,8 +166,15 @@ USAGE
 ARGUMENTS
   path                      repo working tree to analyze (default: ".")
 
+SELECTION (which analyzers run) resolves in four tiers:
+  1. --analyzers <list>     explicit; required (fails closed if a tool is missing)
+  2. code-analyzers.json    or a "code-analyzers" key in package.json; soft
+  3. auto-detect            inferred from repo contents; soft (skip-with-note)
+  4. built-in default       coverage, lint, duplication
+  "soft" = a missing tool is reported with an install pointer but does NOT fail.
+
 OPTIONS
-  -a, --analyzers <list>    comma list: coverage,lint,duplication (default: all)
+  -a, --analyzers <list>    comma list: coverage,lint,duplication,secrets,vulnerabilities
       --repo <name>         logical repo id stamped into addresses
       --min-signals <n>     min distinct tools to flag a hot zone (default: 1)
       --output <fmt>        human (default) | report | simple | sarif

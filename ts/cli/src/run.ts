@@ -1,5 +1,5 @@
-import { CodeAnalyzer, defaultRegistry } from "@code-analyzers/lib";
-import { HELP, parseArgs } from "./args.js";
+import { CodeAnalyzer, defaultRegistry, resolveSelection } from "@code-analyzers/lib";
+import { HELP, KNOWN_ANALYZER_IDS, parseArgs } from "./args.js";
 import { renderHuman, renderReport, renderSarif, renderSimple } from "./render.js";
 
 export interface CliIO {
@@ -28,12 +28,21 @@ export async function run(io: CliIO): Promise<number> {
 
   const { options } = parsed;
   try {
+    const resolved = resolveSelection({
+      repoRoot: options.repoRoot,
+      ...(options.requested ? { requested: options.requested } : {}),
+      configs: options.configs,
+      knownIds: KNOWN_ANALYZER_IDS,
+    });
+    const requiredIds = new Set(resolved.specs.filter((s) => s.required).map((s) => s.id));
+
     const report = await new CodeAnalyzer({
       repoRoot: options.repoRoot,
       ...(options.repo ? { repo: options.repo } : {}),
-      analyzers: options.analyzers,
+      analyzers: resolved.specs,
       registry: defaultRegistry(),
       minSignals: options.minSignals,
+      selection: resolved.selection,
     }).run();
 
     switch (options.output) {
@@ -50,12 +59,13 @@ export async function run(io: CliIO): Promise<number> {
         io.out(renderHuman(report));
     }
 
-    // Fail closed: a tool that should have run but didn't is not a clean pass.
-    // The report (with install guidance) was still emitted above.
-    const degraded = report.analyzers.filter((a) => a.status !== "ok");
-    if (degraded.length > 0 && !options.allowDegraded) {
+    // Fail closed only for analyzers that were *explicitly required* (CLI
+    // selection). Config/auto-detected analyzers that didn't run are reported
+    // (with install guidance) but skip-with-note — they don't fail the run.
+    const failed = report.analyzers.filter((a) => a.status !== "ok" && requiredIds.has(a.tool));
+    if (failed.length > 0 && !options.allowDegraded) {
       io.err(
-        `error: ${degraded.length} analyzer(s) did not run (${degraded
+        `error: ${failed.length} required analyzer(s) did not run (${failed
           .map((a) => `${a.tool}: ${a.status}`)
           .join(", ")}). Failing closed; pass --allow-degraded to override.`,
       );
