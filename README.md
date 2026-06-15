@@ -20,6 +20,8 @@ pnpm -C ts build               # compile core/lib/cli
 pnpm run analyze:self          # build + coverage + run the CLI against this repo
 
 # General use (library is the durable surface; CLI is a thin wrapper):
+# (point --coverage-report at whatever coverage artifact the target repo emits;
+#  for this repo, `pnpm run coverage` writes it under _local/tmp/coverage/)
 node ts/cli/dist/index.js <repo> \
   --coverage-report <path/to/coverage-final.json> \
   --lint-cwd <dir> --lint-bin <path/to/biome> [--json]

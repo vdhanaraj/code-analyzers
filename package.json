@@ -15,7 +15,8 @@
     "coverage": "pnpm -C ts exec vitest run --coverage",
     "lint": "pnpm -C ts lint",
     "format": "pnpm -C ts format",
-    "analyze:self": "pnpm build && pnpm coverage && node ts/cli/dist/index.js . --coverage-report ts/coverage/coverage-final.json --lint-cwd \"$PWD/ts\" --lint-bin \"$PWD/ts/node_modules/.bin/biome\""
+    "analyze:self": "pnpm build && pnpm coverage && node ts/cli/dist/index.js . --coverage-report _local/tmp/coverage/coverage-final.json --lint-cwd \"$PWD/ts\" --lint-bin \"$PWD/ts/node_modules/.bin/biome\"",
+    "clean": "rm -rf ts/core/dist ts/lib/dist ts/cli/dist _local/tmp"
   },
   "devDependencies": {
     "lefthook": "^1.10.0"
