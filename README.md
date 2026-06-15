@@ -8,10 +8,11 @@ other. It produces evidence *for* downstream inference; it contains **no LLM hop
 - **What it is and why** → [ARCHITECTURE.md](ARCHITECTURE.md) (the durable truth)
 - **House style** → [CONVENTIONS.md](CONVENTIONS.md) (project-agnostic conventions)
 
-> Status: **v1 (schema v1).** Coverage, lint, and duplication analyzers behind
-> one shape, a deterministic hot-zone report, and a thin CLI over the
-> `CodeAnalyzer` library. The proof schema is expected to churn (v1 → v3–4)
-> during early iteration.
+> Status: **v2 (schema v2).** Coverage, lint, and duplication analyzers behind
+> one shape, emitting an `EvidenceReport` that **wraps SARIF** (native findings)
+> and adds what SARIF can't carry — numeric measurements and a deterministic/
+> inferred disclosure — plus a deterministic hot-zone rollup, over a thin CLI.
+> The wrapper schema is expected to churn (v2 → v3–4) during early iteration.
 
 ## Quickstart
 
@@ -25,13 +26,16 @@ pnpm run analyze:self          # build + coverage + run the CLI against this rep
 #  for this repo, `pnpm run coverage` writes it under _local/tmp/coverage/)
 node ts/cli/dist/index.js <repo> \
   --coverage-report <path/to/coverage-final.json> \
-  --lint-cwd <dir> --lint-bin <path/to/biome> [--json]
+  --lint-cwd <dir> --lint-bin <path/to/biome> \
+  --output <human|report|simple|sarif>
 node ts/cli/dist/index.js --help
 ```
 
-The CLI emits a schema-versioned proof report (`--json`) or a human-readable
-attention guide (default). It contains **no LLM hop** — the artifacts are
-evidence *for* a downstream consumer's single inference hop.
+The CLI projects one canonical `EvidenceReport` by `--output`: **human** (default
+attention guide), **report** (full JSON — for foundation models), **simple**
+(flattened low-token JSON — for small local models), **sarif** (the embedded
+SARIF log — for GitHub code scanning and viewers). It contains **no LLM hop** —
+the artifacts are evidence *for* a downstream consumer's single inference hop.
 
 ## Ports — none
 

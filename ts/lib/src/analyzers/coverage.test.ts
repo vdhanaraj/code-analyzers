@@ -7,17 +7,12 @@ import { createCoverageAnalyzer } from "./coverage.js";
 
 const ctx: AnalyzerContext = { repoRoot: "", repo: "demo" };
 
-/** Minimal Istanbul entry: `s` = statement hit counts, `f` = function hits. */
-function entry(absPath: string, hits: number[], fns: number[] = []) {
+function entry(absPath: string, hits: number[]) {
   const s: Record<string, number> = {};
   hits.forEach((h, i) => {
     s[i] = h;
   });
-  const f: Record<string, number> = {};
-  fns.forEach((h, i) => {
-    f[i] = h;
-  });
-  return { path: absPath, s, f, b: {} };
+  return { path: absPath, s, f: {}, b: {} };
 }
 
 describe("coverage analyzer", () => {
@@ -30,7 +25,7 @@ describe("coverage analyzer", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("emits a measure proof with metrics per file and flags below-threshold files", async () => {
+  it("emits per-file measurements and a SARIF fail result for below-threshold files", async () => {
     const report = join(dir, "coverage-final.json");
     await writeFile(
       report,
@@ -40,40 +35,40 @@ describe("coverage analyzer", () => {
       }),
     );
 
-    const proofs = await createCoverageAnalyzer({ report, threshold: 80 }).analyze({
+    const out = await createCoverageAnalyzer({ report, threshold: 80 }).analyze({
       ...ctx,
       repoRoot: dir,
     });
 
-    const full = proofs.find((p) => p.scope.path === "src/full.ts" && p.result.kind === "measure");
-    expect(full?.result).toEqual({ kind: "measure", value: 100, unit: "%" });
-    expect(full?.metrics?.find((m) => m.name === "coverage.statements.pct")?.value).toBe(100);
+    expect(out.method).toBe("deterministic");
 
-    const lowMeasure = proofs.find(
-      (p) => p.scope.path === "src/low.ts" && p.result.kind === "measure",
+    // Measurements for both files.
+    const fullPct = out.measurements.find(
+      (m) => m.name === "coverage.statements.pct" && m.address.path === "src/full.ts",
     );
-    expect(lowMeasure?.result).toEqual({ kind: "measure", value: 25, unit: "%" });
+    const lowPct = out.measurements.find(
+      (m) => m.name === "coverage.statements.pct" && m.address.path === "src/low.ts",
+    );
+    expect(fullPct?.value).toBe(100);
+    expect(lowPct?.value).toBe(25);
 
-    const lowFinding = proofs.find(
-      (p) => p.scope.path === "src/low.ts" && p.result.kind === "finding",
+    // Only the low file produces a flagging result.
+    const flagged = out.run.results.map(
+      (r) => r.locations?.[0]?.physicalLocation?.artifactLocation.uri,
     );
-    expect(lowFinding?.result).toMatchObject({ kind: "finding", rule: "coverage.below-threshold" });
-    expect(lowFinding?.severity).toBe("warning");
-
-    // The full file is not flagged.
-    expect(proofs.some((p) => p.scope.path === "src/full.ts" && p.result.kind === "finding")).toBe(
-      false,
-    );
+    expect(flagged).toEqual(["src/low.ts"]);
+    expect(out.run.results[0]?.ruleId).toBe("coverage.below-threshold");
+    expect(out.run.results[0]?.kind).toBe("fail");
   });
 
-  it("surfaces a missing report as a repo-level failed boolean (not silence)", async () => {
-    const proofs = await createCoverageAnalyzer({ report: "nope/coverage-final.json" }).analyze({
+  it("surfaces a missing report as a repo-level fail result (not silence)", async () => {
+    const out = await createCoverageAnalyzer({ report: "nope/coverage-final.json" }).analyze({
       ...ctx,
       repoRoot: dir,
     });
-    expect(proofs).toHaveLength(1);
-    expect(proofs[0]?.result).toEqual({ kind: "boolean", value: false });
-    expect(proofs[0]?.scope.level).toBe("repo");
-    expect(proofs[0]?.provenance.method).toBe("deterministic");
+    expect(out.measurements).toHaveLength(0);
+    expect(out.run.results).toHaveLength(1);
+    expect(out.run.results[0]?.ruleId).toBe("coverage.report-missing");
+    expect(out.run.results[0]?.locations).toBeUndefined();
   });
 });

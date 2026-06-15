@@ -6,6 +6,6 @@
  * looped in), so the envelope is versioned from line one to de-risk every
  * change. Consumers must branch on this value rather than assume a shape.
  */
-export const SCHEMA_VERSION = "1" as const;
+export const SCHEMA_VERSION = "2" as const;
 
 export type SchemaVersion = typeof SCHEMA_VERSION;

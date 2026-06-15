@@ -1,13 +1,16 @@
-import { resolve } from "node:path";
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
 import {
   type AnalyzerContext,
-  type Proof,
-  ProofError,
-  type Report,
+  type AnalyzerRun,
+  EvidenceError,
+  type EvidenceReport,
+  type Measurement,
+  SARIF_VERSION,
   SCHEMA_VERSION,
-  validateProof,
-  validateReport,
+  type SarifRun,
+  validateEvidenceReport,
+  validateMeasurement,
+  validateSarifLog,
 } from "@code-analyzers/core";
 import { computeHotZones } from "./hotzones.js";
 import { AnalyzerRegistry } from "./registry.js";
@@ -21,39 +24,35 @@ export interface AnalyzerSpec {
 export interface CodeAnalyzerOptions {
   /** Path to the repository working tree. Resolved to absolute. */
   readonly repoRoot: string;
-  /**
-   * Logical repo identity stamped into every address. Stable across checkouts
-   * so proofs line up. Defaults to the basename of `repoRoot`.
-   */
+  /** Logical repo identity. Defaults to the basename of `repoRoot`. */
   readonly repo?: string;
   /** Analyzers to run, in order. Selected from the registry by id. */
   readonly analyzers: readonly AnalyzerSpec[];
-  /** Defaults to the built-in registry. Inject to override the wiring point. */
+  /** Defaults to an empty registry. Inject to override the wiring point. */
   readonly registry?: AnalyzerRegistry;
   /** Minimum distinct tools that must flag a file to make it a hot zone. */
   readonly minSignals?: number;
 }
 
-/** Thrown when an analyzer emits a proof that violates the schema contract. */
+/** Thrown when an analyzer emits evidence that violates the contract. */
 export class AnalyzerContractError extends Error {
   constructor(
     readonly analyzerId: string,
-    override readonly cause: ProofError,
+    override readonly cause: EvidenceError,
   ) {
-    super(`analyzer "${analyzerId}" emitted an invalid proof — ${cause.message}`);
+    super(`analyzer "${analyzerId}" emitted invalid evidence — ${cause.message}`);
     this.name = "AnalyzerContractError";
   }
 }
 
 /**
  * The exported orchestration class — the durable artifact (the CLI is a thin
- * wrapper over this). Give it a repo and a set of analyzers; it runs each behind
- * the universal `Analyzer` interface, validates every emitted proof at the seam
- * (so a buggy analyzer fails closed rather than poisoning the report), derives
- * the deterministic hot-zone rollup, and returns a schema-versioned {@link Report}.
+ * wrapper over this). Runs each analyzer behind the universal interface,
+ * validates its output at the seam (a buggy analyzer fails closed rather than
+ * poisoning the report), aggregates the SARIF runs and measurements, derives
+ * the hot-zone rollup, and returns a schema-versioned {@link EvidenceReport}.
  *
- * It contains no LLM hop: it produces evidence artifacts *for* downstream
- * inference. The single short inference hop lives in the consumer, never here.
+ * No LLM hop: it produces evidence artifacts *for* downstream inference.
  */
 export class CodeAnalyzer {
   private readonly repoRoot: string;
@@ -70,34 +69,46 @@ export class CodeAnalyzer {
     this.minSignals = options.minSignals ?? 1;
   }
 
-  /** Run every configured analyzer and assemble the report. */
-  async run(): Promise<Report> {
+  async run(): Promise<EvidenceReport> {
     const ctx: AnalyzerContext = { repoRoot: this.repoRoot, repo: this.repo };
-    const proofs: Proof[] = [];
+    const runs: SarifRun[] = [];
+    const measurements: Measurement[] = [];
+    const analyzers: AnalyzerRun[] = [];
 
     for (const spec of this.specs) {
       const analyzer = this.registry.create(spec.id, spec.config ?? {});
-      const emitted = await analyzer.analyze(ctx);
-      for (const raw of emitted) {
-        proofs.push(this.validateAtSeam(analyzer.id, raw));
-      }
+      const result = await analyzer.analyze(ctx);
+      this.validateAtSeam(analyzer.id, result.run, result.measurements);
+      runs.push(result.run);
+      measurements.push(...result.measurements);
+      analyzers.push({ tool: analyzer.id, version: analyzer.version, method: result.method });
     }
 
-    const report: Report = {
+    const sarif = { version: SARIF_VERSION, runs };
+    const report: EvidenceReport = {
       schemaVersion: SCHEMA_VERSION,
       repo: this.repo,
-      proofs,
-      hotZones: computeHotZones(proofs, { minSignals: this.minSignals }),
+      sarif,
+      measurements,
+      analyzers,
+      hotZones: computeHotZones(sarif, this.repo, { minSignals: this.minSignals }),
     };
     // Final gate: the assembled report must itself satisfy the contract.
-    return validateReport(report);
+    return validateEvidenceReport(report);
   }
 
-  private validateAtSeam(analyzerId: string, raw: Proof): Proof {
+  private validateAtSeam(
+    analyzerId: string,
+    run: SarifRun,
+    runMeasurements: readonly Measurement[],
+  ): void {
     try {
-      return validateProof(raw);
+      validateSarifLog({ version: SARIF_VERSION, runs: [run] }, `analyzer[${analyzerId}].sarif`);
+      runMeasurements.forEach((m, i) =>
+        validateMeasurement(m, `analyzer[${analyzerId}].measurements[${i}]`),
+      );
     } catch (e) {
-      if (e instanceof ProofError) throw new AnalyzerContractError(analyzerId, e);
+      if (e instanceof EvidenceError) throw new AnalyzerContractError(analyzerId, e);
       throw e;
     }
   }

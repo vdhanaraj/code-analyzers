@@ -1,208 +1,208 @@
 import { describe, expect, it } from "vitest";
-import type { Address, Proof, Report } from "./index.js";
+import type { EvidenceReport, Measurement, SarifLog } from "./index.js";
 import {
-  ProofError,
+  EvidenceError,
+  SARIF_VERSION,
   SCHEMA_VERSION,
+  isFlaggingResult,
   validateAddress,
-  validateProof,
-  validateReport,
+  validateEvidenceReport,
+  validateMeasurement,
+  validateSarifLog,
 } from "./index.js";
 
-const goodAddress: Address = {
-  repo: "demo",
-  path: "src/a.ts",
-  range: { unit: "line", start: 1, end: 9 },
-  level: "range",
+const sarif: SarifLog = {
+  version: SARIF_VERSION,
+  runs: [
+    {
+      tool: { driver: { name: "lint", version: "1" } },
+      results: [
+        {
+          ruleId: "lint/style/noVar",
+          level: "error",
+          kind: "fail",
+          message: { text: "Use let or const instead of var." },
+          locations: [
+            {
+              physicalLocation: {
+                artifactLocation: { uri: "src/a.ts" },
+                region: { byteOffset: 12, byteLength: 3 },
+              },
+            },
+          ],
+          properties: { method: "deterministic" },
+        },
+      ],
+    },
+  ],
 };
 
-const goodProof: Proof = {
-  claim: "lib/a.ts is fully covered",
-  result: { kind: "measure", value: 100, unit: "%" },
-  scope: { repo: "demo", path: "src/a.ts", level: "path" },
-  metrics: [{ name: "coverage.lines.pct", value: 100, unit: "%" }],
-  provenance: {
-    tool: "coverage",
-    version: "1",
-    config: {},
-    inputsHash: "abc",
-    method: "deterministic",
-  },
+const measurement: Measurement = {
+  name: "coverage.statements.pct",
+  value: 84,
+  unit: "%",
+  address: { repo: "demo", path: "src/a.ts", level: "path" },
+  analyzer: "coverage",
 };
 
-const goodReport: Report = {
+const goodReport: EvidenceReport = {
   schemaVersion: SCHEMA_VERSION,
   repo: "demo",
-  proofs: [goodProof],
+  sarif,
+  measurements: [measurement],
+  analyzers: [{ tool: "lint", version: "1", method: "deterministic" }],
   hotZones: [],
 };
 
-/** Walk to a nested object key and replace it, returning a deep-ish clone. */
 function withOverride<T>(base: T, mutate: (clone: Record<string, unknown>) => void): unknown {
   const clone = structuredClone(base) as Record<string, unknown>;
   mutate(clone);
   return clone;
 }
 
-describe("validateProof — accepts well-formed proofs", () => {
-  it("round-trips a valid measure proof", () => {
-    expect(validateProof(goodProof)).toEqual(goodProof);
-  });
-
-  it("accepts each result kind", () => {
-    for (const result of [
-      { kind: "boolean", value: false },
-      { kind: "measure", value: 3.2 },
-      { kind: "finding", rule: "noExplicitAny", message: "avoid any" },
-    ] as const) {
-      expect(() => validateProof({ ...goodProof, result })).not.toThrow();
-    }
+describe("validateEvidenceReport — accepts well-formed reports", () => {
+  it("round-trips a valid report", () => {
+    expect(validateEvidenceReport(goodReport)).toEqual(goodReport);
   });
 });
 
-describe("validateProof — rejects malformed proofs (negative cases)", () => {
+describe("validateEvidenceReport — rejects malformed reports (negative cases)", () => {
   const cases: Array<[string, unknown, string]> = [
-    ["non-object", 42, "proof"],
+    ["non-object", 7, "report"],
     [
-      "empty claim",
-      withOverride(goodProof, (c) => {
-        c.claim = "";
+      "wrong schemaVersion",
+      withOverride(goodReport, (c) => {
+        c.schemaVersion = "1";
       }),
-      "proof.claim",
+      "report.schemaVersion",
     ],
     [
-      "missing claim",
-      withOverride(goodProof, (c) => {
-        c.claim = undefined;
+      "empty repo",
+      withOverride(goodReport, (c) => {
+        c.repo = "";
       }),
-      "proof.claim",
+      "report.repo",
     ],
     [
-      "unknown result kind",
-      withOverride(goodProof, (c) => {
-        c.result = { kind: "vibes", value: 1 };
+      "wrong SARIF version",
+      withOverride(goodReport, (c) => {
+        (c.sarif as SarifLog as Record<string, unknown>).version = "2.0.0";
       }),
-      "proof.result.kind",
+      "report.sarif.version",
     ],
     [
-      "measure with NaN",
-      withOverride(goodProof, (c) => {
-        c.result = { kind: "measure", value: Number.NaN };
+      "run missing tool.driver.name",
+      withOverride(goodReport, (c) => {
+        ((c.sarif as Record<string, unknown>).runs as unknown[])[0] = {
+          tool: { driver: {} },
+          results: [],
+        };
       }),
-      "proof.result.value",
+      "report.sarif.runs[0].tool.driver.name",
     ],
     [
-      "boolean with non-boolean value",
-      withOverride(goodProof, (c) => {
-        c.result = { kind: "boolean", value: "yes" };
+      "result missing message.text",
+      withOverride(goodReport, (c) => {
+        (
+          ((c.sarif as Record<string, unknown>).runs as Record<string, unknown>[])[0] as Record<
+            string,
+            unknown
+          >
+        ).results = [{ message: {} }];
       }),
-      "proof.result.value",
+      "report.sarif.runs[0].results[0].message.text",
     ],
     [
-      "finding missing message",
-      withOverride(goodProof, (c) => {
-        c.result = { kind: "finding", rule: "r" };
+      "bad result level",
+      withOverride(goodReport, (c) => {
+        (
+          ((c.sarif as Record<string, unknown>).runs as Record<string, unknown>[])[0] as Record<
+            string,
+            unknown
+          >
+        ).results = [{ message: { text: "x" }, level: "boom" }];
       }),
-      "proof.result.message",
+      "report.sarif.runs[0].results[0].level",
     ],
     [
-      "bad provenance.method",
-      withOverride(goodProof, (c) => {
-        (c.provenance as Record<string, unknown>).method = "guessed";
+      "measurement NaN value",
+      withOverride(goodReport, (c) => {
+        (c.measurements as Measurement[])[0] = { ...measurement, value: Number.NaN };
       }),
-      "proof.provenance.method",
+      "report.measurements[0].value",
     ],
     [
-      "missing inputsHash",
-      withOverride(goodProof, (c) => {
-        (c.provenance as Record<string, unknown>).inputsHash = undefined;
+      "measurement empty name",
+      withOverride(goodReport, (c) => {
+        (c.measurements as Measurement[])[0] = { ...measurement, name: "" };
       }),
-      "proof.provenance.inputsHash",
+      "report.measurements[0].name",
     ],
     [
-      "bad severity",
-      withOverride(goodProof, (c) => {
-        c.severity = "fatal";
+      "bad analyzer method",
+      withOverride(goodReport, (c) => {
+        (c.analyzers as Record<string, unknown>[])[0] = {
+          tool: "x",
+          version: "1",
+          method: "guessed",
+        };
       }),
-      "proof.severity",
+      "report.analyzers[0].method",
     ],
     [
-      "metric with empty name",
-      withOverride(goodProof, (c) => {
-        c.metrics = [{ name: "", value: 1 }];
+      "measurements not array",
+      withOverride(goodReport, (c) => {
+        c.measurements = {};
       }),
-      "proof.metrics[0].name",
-    ],
-    [
-      "metric with non-number value",
-      withOverride(goodProof, (c) => {
-        c.metrics = [{ name: "x", value: "1" }];
-      }),
-      "proof.metrics[0].value",
+      "report.measurements",
     ],
   ];
 
   for (const [name, input, expectedPath] of cases) {
     it(`rejects ${name}`, () => {
-      expect(() => validateProof(input)).toThrow(ProofError);
+      expect(() => validateEvidenceReport(input)).toThrow(EvidenceError);
       try {
-        validateProof(input);
+        validateEvidenceReport(input);
       } catch (e) {
-        expect((e as ProofError).path).toBe(expectedPath);
+        expect((e as EvidenceError).path).toBe(expectedPath);
       }
     });
   }
-});
 
-describe("validateAddress — level/rung consistency", () => {
-  it("accepts a well-formed range address", () => {
-    expect(validateAddress(goodAddress)).toEqual(goodAddress);
-  });
-
-  it("rejects empty repo", () => {
-    expect(() => validateAddress({ repo: "", path: "a", level: "path" })).toThrow(/scope\.repo/);
-  });
-
-  it("rejects symbol-level address without a symbol", () => {
-    expect(() => validateAddress({ repo: "r", path: "a.ts", level: "symbol" })).toThrow(
-      /scope\.symbol/,
-    );
-  });
-
-  it("rejects range-level address without a range", () => {
-    expect(() => validateAddress({ repo: "r", path: "a.ts", level: "range" })).toThrow(
-      /scope\.range/,
-    );
-  });
-
-  it("rejects path-level address with empty path", () => {
-    expect(() => validateAddress({ repo: "r", path: "", level: "path" })).toThrow(/scope\.path/);
-  });
-
-  it("rejects a range whose end precedes start", () => {
-    expect(() =>
-      validateAddress({
-        repo: "r",
-        path: "a",
-        level: "range",
-        range: { unit: "line", start: 9, end: 1 },
-      }),
-    ).toThrow(/range\.end/);
-  });
-});
-
-describe("validateReport — schemaVersion + cross-field invariants", () => {
-  it("accepts a well-formed report", () => {
-    expect(validateReport(goodReport)).toEqual(goodReport);
-  });
-
-  it("rejects an unsupported schemaVersion", () => {
-    expect(() => validateReport({ ...goodReport, schemaVersion: "0" })).toThrow(/schemaVersion/);
-  });
-
-  it("rejects a proof whose scope.repo disagrees with the report repo", () => {
+  it("rejects a measurement whose address.repo disagrees with the report repo", () => {
     const mismatched = withOverride(goodReport, (c) => {
-      (c.proofs as Proof[])[0] = { ...goodProof, scope: { ...goodProof.scope, repo: "other" } };
+      (c.measurements as Measurement[])[0] = {
+        ...measurement,
+        address: { ...measurement.address, repo: "other" },
+      };
     });
-    expect(() => validateReport(mismatched)).toThrow(/does not match report repo/);
+    expect(() => validateEvidenceReport(mismatched)).toThrow(/does not match report repo/);
+  });
+});
+
+describe("validateSarifLog — light structural validation of arbitrary SARIF", () => {
+  it("accepts a minimal log and preserves property bags", () => {
+    const log = validateSarifLog(sarif);
+    expect(log.runs[0]?.results[0]?.properties).toEqual({ method: "deterministic" });
+  });
+});
+
+describe("validateMeasurement + validateAddress", () => {
+  it("round-trips a measurement", () => {
+    expect(validateMeasurement(measurement)).toEqual(measurement);
+  });
+
+  it("rejects a symbol-level address without a symbol", () => {
+    expect(() => validateAddress({ repo: "r", path: "a.ts", level: "symbol" })).toThrow(/symbol/);
+  });
+});
+
+describe("isFlaggingResult", () => {
+  it("flags warning/error fail results, not pass/informational", () => {
+    expect(isFlaggingResult({ message: { text: "x" }, level: "error", kind: "fail" })).toBe(true);
+    expect(isFlaggingResult({ message: { text: "x" }, level: "warning" })).toBe(true);
+    expect(isFlaggingResult({ message: { text: "x" }, level: "error", kind: "pass" })).toBe(false);
+    expect(isFlaggingResult({ message: { text: "x" }, level: "note" })).toBe(false);
+    expect(isFlaggingResult({ message: { text: "x" }, kind: "informational" })).toBe(false);
   });
 });

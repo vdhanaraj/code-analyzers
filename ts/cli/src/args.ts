@@ -6,15 +6,19 @@ export type ParsedArgs =
   | { readonly kind: "error"; readonly message: string }
   | { readonly kind: "run"; readonly options: RunOptions };
 
+/** How the one canonical report is projected for output. */
+export type OutputFormat = "human" | "report" | "simple" | "sarif";
+
 export interface RunOptions {
   readonly repoRoot: string;
   readonly repo?: string;
   readonly analyzers: readonly AnalyzerSpec[];
   readonly minSignals: number;
-  readonly json: boolean;
+  readonly output: OutputFormat;
 }
 
 const KNOWN_ANALYZERS = new Set(["coverage", "lint", "duplication"]);
+const OUTPUT_FORMATS = new Set<OutputFormat>(["human", "report", "simple", "sarif"]);
 
 function splitList(value: string): string[] {
   return value
@@ -97,6 +101,19 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     return { id, config };
   });
 
+  // Output format: --output <fmt>, with --json kept as an alias for `report`.
+  let output: OutputFormat = booleans.has("json") ? "report" : "human";
+  if (flags.has("output")) {
+    const requested = flags.get("output") as string;
+    if (!OUTPUT_FORMATS.has(requested as OutputFormat)) {
+      return {
+        kind: "error",
+        message: `unknown --output "${requested}". Known: human, report, simple, sarif`,
+      };
+    }
+    output = requested as OutputFormat;
+  }
+
   return {
     kind: "run",
     options: {
@@ -104,7 +121,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       ...(flags.has("repo") ? { repo: flags.get("repo") } : {}),
       analyzers,
       minSignals,
-      json: booleans.has("json"),
+      output,
     },
   };
 }
@@ -125,7 +142,11 @@ OPTIONS
   -a, --analyzers <list>    comma list: coverage,lint,duplication (default: all)
       --repo <name>         logical repo id stamped into addresses
       --min-signals <n>     min distinct tools to flag a hot zone (default: 1)
-      --json                emit the full proof report as JSON
+      --output <fmt>        human (default) | report | simple | sarif
+                              report = full EvidenceReport JSON (foundation models)
+                              simple = flattened low-token JSON (small local models)
+                              sarif  = embedded SARIF log (GitHub code scanning, viewers)
+      --json                alias for --output report
   -h, --help                show this help
 
   coverage:    --coverage-report <path>  Istanbul coverage-final.json

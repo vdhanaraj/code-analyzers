@@ -1,6 +1,6 @@
 import { CodeAnalyzer, defaultRegistry } from "@code-analyzers/lib";
 import { HELP, parseArgs } from "./args.js";
-import { renderReport } from "./render.js";
+import { renderHuman, renderReport, renderSarif, renderSimple } from "./render.js";
 
 export interface CliIO {
   readonly argv: readonly string[];
@@ -9,9 +9,9 @@ export interface CliIO {
 }
 
 /**
- * The CLI body — a thin wrapper over the CodeAnalyzer library. Kept pure in its
- * IO (injected `out`/`err`) so it is testable without spawning a process.
- * Returns the process exit code.
+ * The CLI body — a thin wrapper over the CodeAnalyzer library. IO is injected
+ * (`out`/`err`) so it is testable without spawning a process. Returns the exit
+ * code. The same canonical report is projected by the chosen output format.
  */
 export async function run(io: CliIO): Promise<number> {
   const parsed = parseArgs(io.argv);
@@ -36,7 +36,19 @@ export async function run(io: CliIO): Promise<number> {
       minSignals: options.minSignals,
     }).run();
 
-    io.out(options.json ? JSON.stringify(report, null, 2) : renderReport(report));
+    switch (options.output) {
+      case "report":
+        io.out(renderReport(report));
+        break;
+      case "simple":
+        io.out(renderSimple(report));
+        break;
+      case "sarif":
+        io.out(renderSarif(report));
+        break;
+      default:
+        io.out(renderHuman(report));
+    }
     return 0;
   } catch (e) {
     io.err(`error: ${e instanceof Error ? e.message : String(e)}`);

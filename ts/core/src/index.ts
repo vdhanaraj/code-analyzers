@@ -1,28 +1,46 @@
 /**
  * @code-analyzers/core — the contract.
  *
- * The versioned proof schema, normalized addressing, named metrics, and
- * the universal `Analyzer` interface. Language-neutral: TypeScript is the first
- * *analyzed* language, but nothing here assumes it (polyglot is a goal).
+ * A wrapper *around* SARIF: findings ride in a native SARIF log, while the
+ * EvidenceReport adds the dimensions SARIF lacks — numeric measurements and the
+ * per-analyzer deterministic/inferred disclosure — plus normalized addressing
+ * and the hot-zone rollup. Language-neutral: TypeScript is the first *analyzed*
+ * language, but nothing here assumes it (polyglot is a goal).
  */
 export { SCHEMA_VERSION, type SchemaVersion } from "./schema.js";
 export type { Address, AddressLevel, Range } from "./address.js";
 export {
-  SEVERITIES,
-  type HotZone,
-  type Metric,
-  type Proof,
-  type ProofMethod,
-  type ProofResult,
-  type Provenance,
-  type Report,
-  type Severity,
-} from "./proof.js";
-export type { Analyzer, AnalyzerContext } from "./analyzer.js";
+  SARIF_VERSION,
+  isFlaggingResult,
+  type SarifArtifactLocation,
+  type SarifKind,
+  type SarifLevel,
+  type SarifLocation,
+  type SarifLog,
+  type SarifMessage,
+  type SarifPhysicalLocation,
+  type SarifRegion,
+  type SarifReportingDescriptor,
+  type SarifResult,
+  type SarifRun,
+  type SarifTool,
+  type SarifToolComponent,
+  type SarifVersion,
+} from "./sarif.js";
+export type {
+  AnalysisMethod,
+  AnalyzerRun,
+  EvidenceReport,
+  HotZone,
+  Measurement,
+} from "./evidence.js";
+export type { Analyzer, AnalyzerContext, AnalyzerResult } from "./analyzer.js";
 export {
-  ProofError,
+  EvidenceError,
   validateAddress,
-  validateProof,
+  validateAnalyzerRun,
+  validateEvidenceReport,
+  validateMeasurement,
   validateRange,
-  validateReport,
+  validateSarifLog,
 } from "./validate.js";

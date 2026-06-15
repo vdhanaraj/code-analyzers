@@ -1,19 +1,25 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
-import type { Analyzer, AnalyzerContext, Metric, Proof } from "@code-analyzers/core";
+import type {
+  Analyzer,
+  AnalyzerContext,
+  AnalyzerResult,
+  Measurement,
+  SarifResult,
+} from "@code-analyzers/core";
 import { sha256 } from "../hash.js";
 import { normalizeRepoPath } from "../paths.js";
+import { makeResult, makeRun } from "../sarif-build.js";
 
 /**
  * Coverage analyzer — the strategic primitive.
  *
  * Ingests the de-facto-standard Istanbul `coverage-final.json` (emitted by c8,
  * nyc, vitest, jest, …) rather than orchestrating a test run, so it is
- * deterministic and runner-agnostic: feed it the artifact, get back per-file
- * coverage proofs. Each file yields a `measure` proof carrying coverage as
- * first-class named metrics (graphable over time, diffable across versions),
- * plus a `finding` when statement coverage is under threshold so coverage
- * participates in hot zones.
+ * deterministic and runner-agnostic. Per-file coverage becomes named
+ * `measurements` (graphable over time); files under threshold also yield a
+ * SARIF `fail` result so coverage participates in hot zones. A missing report
+ * surfaces as a repo-level finding rather than silence.
  */
 
 const VERSION = "1";
@@ -25,7 +31,6 @@ interface CoverageConfig {
   readonly threshold: number;
 }
 
-/** An Istanbul per-file coverage entry (only the fields we read). */
 interface IstanbulEntry {
   readonly path?: string;
   readonly s?: Record<string, number>;
@@ -42,7 +47,6 @@ function parseConfig(config: Readonly<Record<string, unknown>>): CoverageConfig 
   return { report, threshold };
 }
 
-/** covered / total as a percentage; 100 when there is nothing to cover. */
 function pct(covered: number, total: number): number {
   if (total === 0) return 100;
   return Math.round((covered / total) * 10000) / 100;
@@ -73,34 +77,36 @@ export function createCoverageAnalyzer(config: Readonly<Record<string, unknown>>
   return {
     id: "coverage",
     version: VERSION,
-    async analyze(ctx: AnalyzerContext): Promise<readonly Proof[]> {
+    async analyze(ctx: AnalyzerContext): Promise<AnalyzerResult> {
       const reportPath = isAbsolute(cfg.report) ? cfg.report : resolve(ctx.repoRoot, cfg.report);
-      const provenanceBase = {
-        tool: "coverage" as const,
-        version: VERSION,
-        config: { report: cfg.report, threshold: cfg.threshold },
-        method: "deterministic" as const,
-      };
 
       let raw: string;
       try {
         raw = await readFile(reportPath, "utf8");
       } catch {
-        // No report -> we cannot prove coverage. Surface it as an attention
-        // signal rather than silently emitting nothing.
-        return [
-          {
-            claim: `coverage report present at ${cfg.report}`,
-            result: { kind: "boolean", value: false },
-            scope: { repo: ctx.repo, path: "", level: "repo" },
-            severity: "warning",
-            provenance: { ...provenanceBase, inputsHash: sha256(cfg.report) },
-          },
-        ];
+        // No report -> we cannot prove coverage. Surface it, don't go silent.
+        return {
+          method: "deterministic",
+          measurements: [],
+          run: makeRun(
+            "coverage",
+            VERSION,
+            [
+              makeResult({
+                ruleId: "coverage.report-missing",
+                level: "warning",
+                kind: "fail",
+                message: `coverage report not found at ${cfg.report}`,
+              }),
+            ],
+            "deterministic",
+          ),
+        };
       }
 
       const data = JSON.parse(raw) as Record<string, IstanbulEntry>;
-      const proofs: Proof[] = [];
+      const measurements: Measurement[] = [];
+      const results: SarifResult[] = [];
 
       for (const [key, entry] of Object.entries(data)) {
         const path = normalizeRepoPath(ctx.repoRoot, entry.path ?? key);
@@ -110,48 +116,63 @@ export function createCoverageAnalyzer(config: Readonly<Record<string, unknown>>
         const functions = countHits(entry.f);
         const branches = countBranches(entry.b);
         const stmtPct = pct(statements.covered, statements.total);
+        const address = { repo: ctx.repo, path, level: "path" as const };
 
-        const metrics: Metric[] = [
-          { name: "coverage.statements.pct", value: stmtPct, unit: "%" },
+        measurements.push(
+          {
+            name: "coverage.statements.pct",
+            value: stmtPct,
+            unit: "%",
+            address,
+            analyzer: "coverage",
+          },
           {
             name: "coverage.functions.pct",
             value: pct(functions.covered, functions.total),
             unit: "%",
+            address,
+            analyzer: "coverage",
           },
           {
             name: "coverage.branches.pct",
             value: pct(branches.covered, branches.total),
             unit: "%",
+            address,
+            analyzer: "coverage",
           },
-          { name: "coverage.statements.total", value: statements.total },
-          { name: "coverage.statements.covered", value: statements.covered },
-        ];
-        const inputsHash = sha256(JSON.stringify(entry));
-
-        proofs.push({
-          claim: `${path} statement coverage is ${stmtPct}%`,
-          result: { kind: "measure", value: stmtPct, unit: "%" },
-          scope: { repo: ctx.repo, path, level: "path" },
-          metrics,
-          provenance: { ...provenanceBase, inputsHash },
-        });
+          {
+            name: "coverage.statements.total",
+            value: statements.total,
+            address,
+            analyzer: "coverage",
+          },
+          {
+            name: "coverage.statements.covered",
+            value: statements.covered,
+            address,
+            analyzer: "coverage",
+          },
+        );
 
         if (stmtPct < cfg.threshold) {
-          proofs.push({
-            claim: `${path} statement coverage is below the ${cfg.threshold}% threshold`,
-            result: {
-              kind: "finding",
-              rule: "coverage.below-threshold",
-              message: `statement coverage ${stmtPct}% < ${cfg.threshold}%`,
-            },
-            scope: { repo: ctx.repo, path, level: "path" },
-            severity: "warning",
-            provenance: { ...provenanceBase, inputsHash },
-          });
+          results.push(
+            makeResult({
+              ruleId: "coverage.below-threshold",
+              level: "warning",
+              kind: "fail",
+              message: `statement coverage ${stmtPct}% < ${cfg.threshold}% threshold`,
+              uri: path,
+              properties: { inputsHash: sha256(JSON.stringify(entry)) },
+            }),
+          );
         }
       }
 
-      return proofs;
+      return {
+        method: "deterministic",
+        measurements,
+        run: makeRun("coverage", VERSION, results, "deterministic"),
+      };
     },
   };
 }

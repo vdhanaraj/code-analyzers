@@ -27,60 +27,75 @@ implementation behind any one of them without being rewritten.
   feeds to an LLM. The single short inference hop lives in the *consumer*, not here.
 - **It does not impose absolute "better/worse" scores.** It guides attention; it does not grade.
 
-## The proof model — everything serves it
+## The evidence model — everything serves it
 
 **Deterministic tools are proof.** Their output is fact, not opinion: a type error exists or it does not;
 coverage is 84% or it is not. LLMs are valuable but, as non-deterministic black boxes, have a ceiling on
 the trust their judgements can carry. So we do not ask an LLM to *fabricate* evidence. The trust argument
 is one of **chain length**: `source → many inference hops → conclusion` is low-trust; shortening it to
-`deterministic proofs → a single inference hop → conclusion` (performed downstream, by the consumer) keeps
-the rubric-based judgement while making it trustworthy. **Short chain = higher trust.** This is *not* a
-"don't trust the AI" posture — it is buying the last yard grace by feeding inference hard inputs.
+`deterministic evidence → a single inference hop → conclusion` (performed downstream, by the consumer)
+keeps the rubric-based judgement while making it trustworthy. **Short chain = higher trust.** This is *not*
+a "don't trust the AI" posture — it is buying the last yard grace by feeding inference hard inputs.
 
-A **proof primitive** is the irreducible artifact. It is a claim plus a deterministic measurement against
-it, carrying enough provenance and scope to be trusted and combined with others:
+### We wrap SARIF; we do not reinvent it
 
-- `claim` — what was asserted.
-- `result` — the deterministic measure.
-- `provenance` — `tool` + `version` + `config` + `inputsHash`, plus `method`
-  (`deterministic` | `inferred`). v1 analyzers always emit `deterministic`. The enum is reserved now so a
-  future LLM-backed analyzer slots in without a schema-breaking change, and so a downstream reasoner can
-  **never mistake an inferred result for hard fact**.
-- `scope` — the sub-object of the codebase the proof addresses.
-- `metrics` — named numeric measures (`{ name → value }`), first-class **time-series** citizens: graphable
-  over time, diffable across versions of the code.
+Findings are not ours to redefine. **SARIF** (the OASIS Static Analysis Results Interchange Format) is the
+industry standard for analysis findings — GitHub code scanning, semgrep, CodeQL, gitleaks and many tools
+emit or consume it. So findings ride in a **native SARIF log**, one `run` per analyzer. Egress is then
+lossless (hand back the embedded SARIF) and any SARIF-emitting tool ingests directly.
 
-A tool emits a **set** of proofs, each addressed to a sub-object — not one verdict for the whole repo.
+But SARIF is a *diagnostics* format, and it structurally cannot carry the two things this project's thesis
+hinges on. So our artifact is a thin **wrapper around SARIF**, the `EvidenceReport`, adding exactly what
+SARIF lacks:
+
+- **Numeric measurements** — SARIF has no first-class metric. `coverage = 84%`, `duplication = 3%` are
+  named `measurements` (`{ name, value, unit?, address, analyzer }`): first-class **time-series** citizens,
+  graphable over time and diffable across versions. (Burying them in SARIF property bags would forfeit the
+  interop that motivated SARIF, and we'd still be defining a dialect — just an untyped one.)
+- **The determinism disclosure** — `analyzers[].method` is `deterministic | inferred`, per analyzer (a
+  tool is uniformly one or the other). All current analyzers are `deterministic`; `inferred` is reserved so
+  a future LLM-backed analyzer slots in without a schema-breaking change, and so a downstream reasoner
+  **never mistakes an inferred result for hard fact**. It is mirrored into `run.properties` so emitted
+  SARIF stays self-describing.
+
+SARIF's own `result.kind` (`pass | fail | informational | …`) already covers pass/fail checks, so a
+"coverage report missing" or "below threshold" is a native SARIF `fail`, not a bespoke shape.
 
 ### Normalized addressing
 
-For proofs from different tools to be reasoned about *at the same level and in relation to each other*,
-their scopes resolve to a shared **hierarchical coordinate**: `repo → path → symbol/range`. Coarse tools
-attach at the path level, fine tools at symbol/range; a parent **aggregates its children**, which is what
-enables **rollups** and **same-codebase comparison**.
+For findings and measurements from different tools to be reasoned about *in relation to each other*, they
+resolve to a shared coordinate. Findings address files via the SARIF artifact `uri` (repo-relative);
+measurements carry an `Address` on the `repo → path → symbol/range` hierarchy. Commensurability comes from
+this shared coordinate plus the hot-zone rollup — **not** from findings and measurements sharing one type
+(they are genuinely different kinds of evidence).
 
 **Canonical addressing is deceptively hard, and is deliberately deferred.** The wrapping layer normalizes
 **best-effort**; because the last yard is handled downstream by a foundation model, residual imprecision
-is absorbed there. We invest in addressing precision **empirically** — once real wrapped tools give us
-artifacts to compare — rather than designing a perfect coordinate system up front.
+is absorbed there. We invest in addressing precision **empirically** rather than up front.
 
 ### Comparability over scoring
 
-v1 emits reports that **guide attention** ("hot zones" for human/agent review), not absolute scores or
-better/worse verdicts. Two reasons:
+Reports **guide attention** ("hot zones" — files where flagging SARIF results land, ranked by how many
+distinct tools agree), not absolute scores. Two reasons:
 
 1. **The lens will change rapidly.** A lens is best judged by holding the subject constant — *same
-   codebase, same moment, different lens*. Comparability comes from same-codebase-same-time, not from a
+   codebase, same moment, different lens*. Comparability comes from same-codebase-same-time, not a
    universal scale; baking in absolute scores would mostly measure the lens's own noise.
-2. **Attention-focusing is the value floor.** Hot zones never *lose* value as the tools and process
-   evolve, so they are the safest thing to ship first.
+2. **Attention-focusing is the value floor.** Hot zones never *lose* value as the tools evolve.
 
 ### The schema version
 
-Every emitted artifact is JSON stamped with a **`schemaVersion`** (aligned with the SARIF/Docker
-convention of a self-describing version field). The schema is *expected* to churn (v1 → v3–4 during solo
-iteration before anyone else is looped in), so versioning the envelope from line one de-risks every
-change.
+The `EvidenceReport` wrapper is stamped with a **`schemaVersion`** (the embedded SARIF carries its own
+`version: "2.1.0"`). The wrapper schema is *expected* to churn (v2 → v3–4 during solo iteration before
+anyone else is looped in), so versioning the envelope from line one de-risks every change. Findings stay
+SARIF-isomorphic so egress remains a mechanical mapping as the wrapper evolves.
+
+### Renderers — one report, many projections
+
+The single canonical `EvidenceReport` is projected for different consumers: **`report`** (full JSON — the
+robust form for foundation models), **`simple`** (flattened, low-token JSON — for small local models),
+**`sarif`** (the embedded SARIF verbatim — for GitHub code scanning and existing viewers), and **`human`**
+(a terminal attention guide).
 
 ## System shape
 
@@ -89,18 +104,20 @@ first, CLI thin** — the durable artifact is a well-documented exported class; 
 the tool composes across CI/CD, agentic harnesses, ad-hoc runs against any repo, and a future company-wide
 auditing service.
 
-- **`ts/core`** — the contract: the versioned proof schema (`schemaVersion`, incl. `provenance.method`), normalized
-  address types, named-metric types, and the `Analyzer` interface. **Language-neutral** — TypeScript is
-  the first *analyzed* language, but the contract never assumes it (polyglot is a goal).
-- **`ts/lib`** — the exported orchestration class: walk the repo → run the registered analyzers →
-  normalize addresses → assemble proofs → derive deterministic hot zones. Plays the `api` role (domain
-  logic) but as an **in-process library, not an HTTP service**.
+- **`ts/core`** — the contract: the `EvidenceReport` schema (`schemaVersion`), the SARIF 2.1.0 subset,
+  `Measurement`, `AnalyzerRun` (incl. `method`), normalized address types, and the `Analyzer` interface
+  (`analyze → { run, measurements, method }`). **Language-neutral** — TypeScript is the first *analyzed*
+  language, but the contract never assumes it (polyglot is a goal).
+- **`ts/lib`** — the exported orchestration class: run the registered analyzers → aggregate their SARIF
+  runs and measurements → derive deterministic hot zones → assemble an `EvidenceReport`. Plays the `api`
+  role (domain logic) but as an **in-process library, not an HTTP service**.
 - **`ts/cli`** — a thin wrapper over `ts/lib`. Plays the `app` role; the user-facing surface is a **CLI,
   not a web app**.
-- **Analyzers behind a stable `Analyzer` interface at a single wiring point.** v1 registers **coverage**
+- **Analyzers behind a stable `Analyzer` interface at a single wiring point.** Registered: **coverage**
   (the strategic primitive — compounding downstream work), **lint** (wraps Biome), and **duplication**
-  (wraps jscpd — token-based clone detection, language-agnostic). Adding an analyzer = a module plus a
-  case at the wiring point; nothing else changes.
+  (wraps jscpd — token-based clone detection, language-agnostic). Each normalizes its tool's output to a
+  SARIF run; tools that already emit SARIF pass through. Adding an analyzer = a module plus a registry
+  line; nothing else changes.
 
 ## Divergences from CONVENTIONS
 
@@ -116,34 +133,42 @@ auditing service.
 
 ## Data model
 
-The **proof schema (v1)** — shapes are illustrative, not yet frozen; `ts/core` is the source of truth
-once written.
+The **EvidenceReport schema (v2)** — `ts/core` is the source of truth; this is the shape.
 
 ```
-Proof {
-  claim:      string            // what was asserted
-  result:     <deterministic measure>
-  scope:      Address           // the sub-object addressed
-  metrics?:   { [name]: number } // named, time-series-friendly
-  provenance: {
-    tool:       string
-    version:    string
-    config:     <serializable>
-    inputsHash: string
-    method:     "deterministic" | "inferred"   // v1 always "deterministic"
-  }
+EvidenceReport {
+  schemaVersion: "2"             // wrapper version stamp
+  repo:          string
+  sarif:         SarifLog        // findings, native SARIF 2.1.0 (one run per analyzer)
+  measurements:  Measurement[]   // what SARIF can't carry (see below)
+  analyzers:     AnalyzerRun[]   // per-analyzer provenance + determinism
+  hotZones:      HotZone[]       // attention rollup over flagging SARIF results
 }
 
-Address {                        // normalized hierarchical coordinate
+Measurement {                    // a named numeric, time-series-friendly
+  name:     string               // e.g. "coverage.statements.pct"
+  value:    number
+  unit?:    string
+  address:  Address              // the sub-object measured
+  analyzer: string               // which analyzer produced it
+}
+
+AnalyzerRun {
+  tool:    string                // = SARIF run tool.driver.name
+  version: string
+  method:  "deterministic" | "inferred"   // all current analyzers deterministic
+}
+
+Address {                        // normalized coordinate (measurements + hot zones)
   repo:    string
-  path:    string
+  path:    string                // repo-relative POSIX; "" = repo-level
   symbol?: string                // e.g. "AuthService.login"
-  range?:  { start: number, end: number }
+  range?:  { unit: "line"|"byte", start: number, end: number }
+  level:   "repo" | "path" | "symbol" | "range"
 }
 
-Report {
-  schemaVersion: string          // proof-schema version stamp
-  proofs:        Proof[]
-  hotZones:      <attention-guiding rollup, deterministic>
-}
+// Findings live in `sarif` as native SARIF results: ruleId, level
+// (none|note|warning|error), kind (pass|fail|informational|…),
+// message.text, locations[].physicalLocation (artifactLocation.uri + region).
+// `method` is mirrored into run.properties so emitted SARIF self-describes.
 ```

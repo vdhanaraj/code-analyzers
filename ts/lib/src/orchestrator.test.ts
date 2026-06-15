@@ -1,10 +1,11 @@
-import type { Analyzer, AnalyzerContext, Proof } from "@code-analyzers/core";
+import type { Analyzer, AnalyzerResult, SarifResult } from "@code-analyzers/core";
 import { describe, expect, it } from "vitest";
 import { AnalyzerContractError, CodeAnalyzer } from "./orchestrator.js";
 import { AnalyzerRegistry } from "./registry.js";
+import { makeResult, makeRun } from "./sarif-build.js";
 
-function fakeAnalyzer(id: string, proofs: (ctx: AnalyzerContext) => Proof[]): Analyzer {
-  return { id, version: "test", analyze: async (ctx) => proofs(ctx) };
+function fakeAnalyzer(id: string, build: (repo: string) => AnalyzerResult): Analyzer {
+  return { id, version: "test", analyze: async (ctx) => build(ctx.repo) };
 }
 
 function registryWith(...analyzers: Analyzer[]): AnalyzerRegistry {
@@ -13,18 +14,17 @@ function registryWith(...analyzers: Analyzer[]): AnalyzerRegistry {
   return registry;
 }
 
-const validProof = (repo: string, path: string): Proof => ({
-  claim: `${path} fails`,
-  result: { kind: "finding", rule: "demo", message: "bad" },
-  scope: { repo, path, level: "path" },
-  severity: "warning",
-  provenance: { tool: "stub", version: "1", config: {}, inputsHash: "h", method: "deterministic" },
-});
+const failResult = (uri: string): SarifResult =>
+  makeResult({ ruleId: "demo", level: "warning", kind: "fail", message: "bad", uri });
 
 describe("CodeAnalyzer", () => {
-  it("assembles a schema-version-stamped report and defaults repo from repoRoot basename", async () => {
+  it("assembles a schema-versioned report and defaults repo from repoRoot basename", async () => {
     const registry = registryWith(
-      fakeAnalyzer("stub", (ctx) => [validProof(ctx.repo, "src/a.ts")]),
+      fakeAnalyzer("stub", () => ({
+        method: "deterministic",
+        measurements: [],
+        run: makeRun("stub", "1", [failResult("src/a.ts")], "deterministic"),
+      })),
     );
     const report = await new CodeAnalyzer({
       repoRoot: "/tmp/my-repo",
@@ -32,17 +32,33 @@ describe("CodeAnalyzer", () => {
       registry,
     }).run();
 
-    expect(report.schemaVersion).toBe("1");
+    expect(report.schemaVersion).toBe("2");
     expect(report.repo).toBe("my-repo");
-    expect(report.proofs).toHaveLength(1);
+    expect(report.sarif.runs).toHaveLength(1);
+    expect(report.analyzers).toEqual([{ tool: "stub", version: "test", method: "deterministic" }]);
     expect(report.hotZones).toHaveLength(1);
     expect(report.hotZones[0]?.signals).toEqual(["stub"]);
   });
 
-  it("runs analyzers in order and concatenates their proofs", async () => {
+  it("aggregates runs and measurements across analyzers in order", async () => {
     const registry = registryWith(
-      fakeAnalyzer("a", (ctx) => [validProof(ctx.repo, "a.ts")]),
-      fakeAnalyzer("b", (ctx) => [validProof(ctx.repo, "b.ts")]),
+      fakeAnalyzer("a", (repo) => ({
+        method: "deterministic",
+        measurements: [
+          {
+            name: "a.metric",
+            value: 1,
+            address: { repo, path: "a.ts", level: "path" },
+            analyzer: "a",
+          },
+        ],
+        run: makeRun("a", "1", [], "deterministic"),
+      })),
+      fakeAnalyzer("b", () => ({
+        method: "deterministic",
+        measurements: [],
+        run: makeRun("b", "1", [], "deterministic"),
+      })),
     );
     const report = await new CodeAnalyzer({
       repoRoot: "/tmp/r",
@@ -50,20 +66,23 @@ describe("CodeAnalyzer", () => {
       analyzers: [{ id: "b" }, { id: "a" }],
       registry,
     }).run();
-    expect(report.proofs.map((p) => p.provenance.tool)).toEqual(["stub", "stub"]);
-    expect(report.proofs.map((p) => p.scope.path)).toEqual(["b.ts", "a.ts"]);
+    expect(report.sarif.runs.map((r) => r.tool.driver.name)).toEqual(["b", "a"]);
+    expect(report.measurements.map((m) => m.name)).toEqual(["a.metric"]);
   });
 
-  it("fails closed when an analyzer emits an invalid proof", async () => {
-    const bad = fakeAnalyzer("rogue", (ctx) => [
-      { ...validProof(ctx.repo, "x.ts"), claim: "" } as Proof,
-    ]);
-    const registry = registryWith(bad);
+  it("fails closed when an analyzer emits an invalid measurement", async () => {
+    const bad = fakeAnalyzer("rogue", (repo) => ({
+      method: "deterministic",
+      measurements: [
+        { name: "", value: 1, address: { repo, path: "x.ts", level: "path" }, analyzer: "rogue" },
+      ],
+      run: makeRun("rogue", "1", [], "deterministic"),
+    }));
     const run = new CodeAnalyzer({
       repoRoot: "/tmp/r",
       repo: "r",
       analyzers: [{ id: "rogue" }],
-      registry,
+      registry: registryWith(bad),
     }).run();
     await expect(run).rejects.toBeInstanceOf(AnalyzerContractError);
     await expect(run).rejects.toThrow(/rogue/);

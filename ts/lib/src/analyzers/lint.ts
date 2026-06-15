@@ -1,16 +1,23 @@
-import type { Analyzer, AnalyzerContext, Proof, Range, Severity } from "@code-analyzers/core";
-import { sha256 } from "../hash.js";
+import type {
+  Analyzer,
+  AnalyzerContext,
+  AnalyzerResult,
+  Measurement,
+  SarifLevel,
+  SarifRegion,
+  SarifResult,
+} from "@code-analyzers/core";
 import { normalizeRepoPath } from "../paths.js";
+import { makeResult, makeRun } from "../sarif-build.js";
 import { exec } from "./exec.js";
 
 /**
  * Lint analyzer — wraps Biome's JSON reporter.
  *
- * Runs `biome check --reporter=json` against the target and maps each
- * diagnostic to a `finding` proof addressed (best-effort) to a byte range, so
- * fine-grained lint findings roll up to their file alongside coarse signals
- * like coverage. The Biome binary and the paths to check are configurable; the
- * external driver (process spawn, Biome's JSON shape) lives only here.
+ * Runs `biome check --reporter=json` and maps each diagnostic to a SARIF result
+ * (best-effort byte-range location), plus a repo-level `lint.findings` count
+ * measurement for trending. The external driver (process spawn, Biome's JSON
+ * shape) lives only here.
  */
 
 const VERSION = "1";
@@ -32,21 +39,19 @@ function parseConfig(ctx: AnalyzerContext, config: Readonly<Record<string, unkno
   return { bin, cwd: cwd ?? ctx.repoRoot, paths };
 }
 
-/** Biome severities -> our ordered Severity. Unknown -> "warning". */
-function mapSeverity(s: unknown): Severity {
+/** Biome severities -> SARIF level. note-level findings do not flag hot zones. */
+function mapLevel(s: unknown): SarifLevel {
   switch (s) {
     case "error":
     case "fatal":
       return "error";
-    case "information":
-    case "hint":
-      return "info";
-    default:
+    case "warning":
       return "warning";
+    default:
+      return "note";
   }
 }
 
-/** Pull a plain string out of Biome's description/message (string or markup). */
 function extractMessage(diagnostic: Record<string, unknown>): string {
   if (typeof diagnostic.description === "string" && diagnostic.description.length > 0) {
     return diagnostic.description;
@@ -77,10 +82,11 @@ function extractPath(location: Record<string, unknown> | undefined): string | un
   return undefined;
 }
 
-function extractRange(location: Record<string, unknown> | undefined): Range | undefined {
+function extractRegion(location: Record<string, unknown> | undefined): SarifRegion | undefined {
   const span = location?.span;
   if (Array.isArray(span) && span.length === 2 && span.every((n) => typeof n === "number")) {
-    return { unit: "byte", start: span[0] as number, end: span[1] as number };
+    const [start, end] = span as [number, number];
+    return { byteOffset: start, byteLength: Math.max(0, end - start) };
   }
   return undefined;
 }
@@ -89,7 +95,7 @@ export function createLintAnalyzer(config: Readonly<Record<string, unknown>>): A
   return {
     id: "lint",
     version: VERSION,
-    async analyze(ctx: AnalyzerContext): Promise<readonly Proof[]> {
+    async analyze(ctx: AnalyzerContext): Promise<AnalyzerResult> {
       const cfg = parseConfig(ctx, config);
       const result = await exec(
         cfg.bin,
@@ -100,14 +106,7 @@ export function createLintAnalyzer(config: Readonly<Record<string, unknown>>): A
       const parsed = JSON.parse(result.stdout) as { diagnostics?: unknown };
       const diagnostics = Array.isArray(parsed.diagnostics) ? parsed.diagnostics : [];
 
-      const provenanceBase = {
-        tool: "lint" as const,
-        version: VERSION,
-        config: { bin: cfg.bin, paths: cfg.paths },
-        method: "deterministic" as const,
-      };
-
-      const proofs: Proof[] = [];
+      const results: SarifResult[] = [];
       for (const d of diagnostics) {
         if (typeof d !== "object" || d === null) continue;
         const diagnostic = d as Record<string, unknown>;
@@ -118,26 +117,34 @@ export function createLintAnalyzer(config: Readonly<Record<string, unknown>>): A
         const path = normalizeRepoPath(cfg.cwd ?? ctx.repoRoot, rawPath);
         if (path === "") continue;
 
-        const rule = typeof diagnostic.category === "string" ? diagnostic.category : "lint";
-        const message = extractMessage(diagnostic);
-        const severity = mapSeverity(diagnostic.severity);
-        const range = extractRange(location);
-
-        proofs.push({
-          claim: `${path}: ${rule}`,
-          result: { kind: "finding", rule, message },
-          scope: range
-            ? { repo: ctx.repo, path, range, level: "range" }
-            : { repo: ctx.repo, path, level: "path" },
-          severity,
-          provenance: {
-            ...provenanceBase,
-            inputsHash: sha256(rule, message, path, JSON.stringify(range ?? null)),
-          },
-        });
+        const ruleId = typeof diagnostic.category === "string" ? diagnostic.category : "lint";
+        const region = extractRegion(location);
+        results.push(
+          makeResult({
+            ruleId,
+            level: mapLevel(diagnostic.severity),
+            kind: "fail",
+            message: extractMessage(diagnostic),
+            uri: path,
+            ...(region ? { region } : {}),
+          }),
+        );
       }
 
-      return proofs;
+      const measurements: Measurement[] = [
+        {
+          name: "lint.findings",
+          value: results.length,
+          address: { repo: ctx.repo, path: "", level: "repo" },
+          analyzer: "lint",
+        },
+      ];
+
+      return {
+        method: "deterministic",
+        measurements,
+        run: makeRun("lint", VERSION, results, "deterministic"),
+      };
     },
   };
 }
