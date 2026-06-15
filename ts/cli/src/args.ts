@@ -15,6 +15,8 @@ export interface RunOptions {
   readonly analyzers: readonly AnalyzerSpec[];
   readonly minSignals: number;
   readonly output: OutputFormat;
+  /** When false (default), exit non-zero if any analyzer did not run. */
+  readonly allowDegraded: boolean;
 }
 
 // coverage/lint/duplication run by default (npm-provided binaries). secrets and
@@ -46,6 +48,10 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     if (token === "--help" || token === "-h") return { kind: "help" };
     if (token === "--json") {
       booleans.add("json");
+      continue;
+    }
+    if (token === "--allow-degraded") {
+      booleans.add("allow-degraded");
       continue;
     }
     if (token.startsWith("--")) {
@@ -135,6 +141,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       analyzers,
       minSignals,
       output,
+      allowDegraded: booleans.has("allow-degraded"),
     },
   };
 }
@@ -160,6 +167,8 @@ OPTIONS
                               simple = flattened low-token JSON (small local models)
                               sarif  = embedded SARIF log (GitHub code scanning, viewers)
       --json                alias for --output report
+      --allow-degraded      exit 0 even if an analyzer did not run (default:
+                              fail closed with exit 3)
   -h, --help                show this help
 
   coverage:    --coverage-report <path>  Istanbul coverage-final.json

@@ -2,6 +2,7 @@ import type { Address, Range } from "./address.js";
 import type {
   AnalysisMethod,
   AnalyzerRun,
+  AnalyzerStatus,
   EvidenceReport,
   ExternalReference,
   HotZone,
@@ -39,6 +40,7 @@ export class EvidenceError extends Error {
 
 const ADDRESS_LEVELS = ["repo", "path", "symbol", "range"] as const;
 const ANALYSIS_METHODS = ["deterministic", "inferred"] as const;
+const ANALYZER_STATUSES = ["ok", "unavailable", "errored"] as const;
 const SARIF_LEVELS = ["none", "note", "warning", "error"] as const;
 const SARIF_KINDS = ["notApplicable", "pass", "fail", "open", "review", "informational"] as const;
 
@@ -129,7 +131,16 @@ export function validateAnalyzerRun(v: unknown, path = "analyzer"): AnalyzerRun 
     tool: reqNonEmpty(v.tool, `${path}.tool`),
     version: reqString(v.version, `${path}.version`),
     method: reqEnum<AnalysisMethod>(v.method, ANALYSIS_METHODS, `${path}.method`),
+    status: reqEnum<AnalyzerStatus>(v.status, ANALYZER_STATUSES, `${path}.status`),
   };
+  if (v.diagnostic !== undefined) {
+    if (!isObject(v.diagnostic)) throw new EvidenceError("expected object", `${path}.diagnostic`);
+    const message = reqNonEmpty(v.diagnostic.message, `${path}.diagnostic.message`);
+    run.diagnostic =
+      v.diagnostic.helpUrl !== undefined
+        ? { message, helpUrl: reqString(v.diagnostic.helpUrl, `${path}.diagnostic.helpUrl`) }
+        : { message };
+  }
   if (v.externalReferences !== undefined) {
     run.externalReferences = reqArray(v.externalReferences, `${path}.externalReferences`).map(
       (ref, i) => {

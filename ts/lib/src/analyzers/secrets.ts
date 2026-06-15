@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Analyzer, AnalyzerContext, AnalyzerResult, SarifResult } from "@code-analyzers/core";
 import { ingestSarifRun } from "../ingest-sarif.js";
-import { exec } from "./exec.js";
+import { CommandNotFoundError, exec } from "./exec.js";
+import { unavailableResult } from "./null-state.js";
 
 /**
  * Secrets analyzer — wraps gitleaks (id `secrets`, per role-based naming).
@@ -19,6 +20,7 @@ import { exec } from "./exec.js";
 const VERSION = "1";
 const DEFAULT_BIN = "gitleaks";
 const ID = "secrets";
+const HELP_URL = "https://github.com/gitleaks/gitleaks#installing";
 
 interface SecretsConfig {
   readonly bin: string;
@@ -102,20 +104,26 @@ export function createSecretsAnalyzer(config: Readonly<Record<string, unknown>>)
       const outDir = await mkdtemp(join(tmpdir(), "ca-gitleaks-"));
       const outFile = join(outDir, "gitleaks.sarif");
       try {
-        await exec(
-          cfg.bin,
-          [
-            "dir",
-            cfg.path,
-            "--report-format",
-            "sarif",
-            "--report-path",
-            outFile,
-            "--redact",
-            "--no-banner",
-          ],
-          { cwd: cfg.cwd },
-        );
+        try {
+          await exec(
+            cfg.bin,
+            [
+              "dir",
+              cfg.path,
+              "--report-format",
+              "sarif",
+              "--report-path",
+              outFile,
+              "--redact",
+              "--no-banner",
+            ],
+            { cwd: cfg.cwd },
+          );
+        } catch (e) {
+          if (e instanceof CommandNotFoundError)
+            return unavailableResult(ID, VERSION, cfg.bin, HELP_URL);
+          throw e;
+        }
         let raw: string | undefined;
         try {
           raw = await readFile(outFile, "utf8");

@@ -35,7 +35,9 @@ describe("CodeAnalyzer", () => {
     expect(report.schemaVersion).toBe("2");
     expect(report.repo).toBe("my-repo");
     expect(report.sarif.runs).toHaveLength(1);
-    expect(report.analyzers).toEqual([{ tool: "stub", version: "test", method: "deterministic" }]);
+    expect(report.analyzers).toEqual([
+      { tool: "stub", version: "test", method: "deterministic", status: "ok" },
+    ]);
     expect(report.hotZones).toHaveLength(1);
     expect(report.hotZones[0]?.signals).toEqual(["stub"]);
   });
@@ -86,6 +88,52 @@ describe("CodeAnalyzer", () => {
     }).run();
     await expect(run).rejects.toBeInstanceOf(AnalyzerContractError);
     await expect(run).rejects.toThrow(/rogue/);
+  });
+
+  it("keeps the run alive and marks errored when an analyzer throws at runtime", async () => {
+    const boom: Analyzer = {
+      id: "boom",
+      version: "1",
+      analyze: async () => {
+        throw new Error("kaboom");
+      },
+    };
+    const ok = fakeAnalyzer("ok", () => ({
+      method: "deterministic",
+      measurements: [],
+      run: makeRun("ok", "1", [], "deterministic"),
+    }));
+    const report = await new CodeAnalyzer({
+      repoRoot: "/tmp/r",
+      repo: "r",
+      analyzers: [{ id: "boom" }, { id: "ok" }],
+      registry: registryWith(boom, ok),
+    }).run();
+
+    expect(report.sarif.runs).toHaveLength(2); // both runs present
+    const boomRun = report.analyzers.find((a) => a.tool === "boom");
+    expect(boomRun?.status).toBe("errored");
+    expect(boomRun?.diagnostic?.message).toContain("kaboom");
+    expect(report.analyzers.find((a) => a.tool === "ok")?.status).toBe("ok");
+  });
+
+  it("carries an analyzer's unavailable null-state (with help) onto the report", async () => {
+    const missing = fakeAnalyzer("missing", () => ({
+      status: "unavailable",
+      method: "deterministic",
+      measurements: [],
+      run: makeRun("missing", "1", [], "deterministic"),
+      diagnostic: { message: "tool X not installed", helpUrl: "https://example.com/install" },
+    }));
+    const report = await new CodeAnalyzer({
+      repoRoot: "/tmp/r",
+      repo: "r",
+      analyzers: [{ id: "missing" }],
+      registry: registryWith(missing),
+    }).run();
+    const run = report.analyzers[0];
+    expect(run?.status).toBe("unavailable");
+    expect(run?.diagnostic?.helpUrl).toBe("https://example.com/install");
   });
 
   it("rejects an unknown analyzer id at the wiring point", async () => {

@@ -50,10 +50,32 @@ export interface ExternalReference {
   readonly version?: string;
 }
 
+/**
+ * Whether an analyzer actually ran. Load-bearing for resilience: a tool that
+ * did not run must **not** look like a clean pass (zero findings). A consumer
+ * "fails closed" by treating anything other than `ok` as not-a-pass.
+ *
+ * `ok`          — the analyzer executed.
+ * `unavailable` — its underlying tool is missing (not installed / wrong path).
+ * `errored`     — the tool was present but the run failed (crash, bad output).
+ */
+export type AnalyzerStatus = "ok" | "unavailable" | "errored";
+
+/** Human + machine guidance when an analyzer is not `ok`. */
+export interface AnalyzerDiagnostic {
+  readonly message: string;
+  /** OS-agnostic install/troubleshooting resource for the underlying tool. */
+  readonly helpUrl?: string;
+}
+
 export interface AnalyzerRun {
   readonly tool: string;
   readonly version: string;
   readonly method: AnalysisMethod;
+  /** Whether this analyzer actually ran — see {@link AnalyzerStatus}. */
+  readonly status: AnalyzerStatus;
+  /** Guidance when `status` is not `ok` (missing tool → how to install it). */
+  readonly diagnostic?: AnalyzerDiagnostic;
   /** Outside sources consulted, if any (see {@link ExternalReference}). */
   readonly externalReferences?: readonly ExternalReference[];
 }

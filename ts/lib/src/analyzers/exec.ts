@@ -6,6 +6,14 @@ export interface ExecResult {
   readonly stderr: string;
 }
 
+/** The command could not be spawned because it is not installed / not on PATH. */
+export class CommandNotFoundError extends Error {
+  constructor(readonly command: string) {
+    super(`"${command}" not found — is it installed and on PATH?`);
+    this.name = "CommandNotFoundError";
+  }
+}
+
 /**
  * Run an external tool and capture its output. Lives in the analyzer
  * implementation layer — external drivers/process spawning never leak above it.
@@ -26,16 +34,9 @@ export function exec(
         if (error) {
           const code = error.code;
           if (typeof code !== "number") {
-            // Spawn failure (e.g. command not found) — not a tool-reported result.
-            if (code === "ENOENT") {
-              reject(
-                new Error(
-                  `"${command}" not found — install it or point the analyzer at its binary (its --*-bin flag)`,
-                ),
-              );
-              return;
-            }
-            reject(error);
+            // Spawn failure — not a tool-reported result. ENOENT (command not
+            // found) is typed so analyzers can emit a null state with install help.
+            reject(code === "ENOENT" ? new CommandNotFoundError(command) : error);
             return;
           }
           resolvePromise({ code, stdout, stderr });

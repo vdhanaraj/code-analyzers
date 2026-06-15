@@ -50,7 +50,7 @@ const goodReport: EvidenceReport = {
   repo: "demo",
   sarif,
   measurements: [measurement],
-  analyzers: [{ tool: "lint", version: "1", method: "deterministic" }],
+  analyzers: [{ tool: "lint", version: "1", method: "deterministic", status: "ok" }],
   hotZones: [],
 };
 

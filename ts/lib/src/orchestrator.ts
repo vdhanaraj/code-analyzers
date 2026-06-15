@@ -77,16 +77,37 @@ export class CodeAnalyzer {
 
     for (const spec of this.specs) {
       const analyzer = this.registry.create(spec.id, spec.config ?? {});
-      const result = await analyzer.analyze(ctx);
-      this.validateAtSeam(analyzer.id, result.run, result.measurements);
-      runs.push(result.run);
-      measurements.push(...result.measurements);
-      analyzers.push({
-        tool: analyzer.id,
-        version: analyzer.version,
-        method: result.method,
-        ...(result.externalReferences ? { externalReferences: result.externalReferences } : {}),
-      });
+      try {
+        const result = await analyzer.analyze(ctx);
+        this.validateAtSeam(analyzer.id, result.run, result.measurements);
+        runs.push(result.run);
+        measurements.push(...result.measurements);
+        analyzers.push({
+          tool: analyzer.id,
+          version: analyzer.version,
+          method: result.method,
+          status: result.status ?? "ok",
+          ...(result.diagnostic ? { diagnostic: result.diagnostic } : {}),
+          ...(result.externalReferences ? { externalReferences: result.externalReferences } : {}),
+        });
+      } catch (e) {
+        // A buggy analyzer (invalid evidence) is our bug — fail loud.
+        if (e instanceof AnalyzerContractError) throw e;
+        // A tool/runtime failure must not crash the whole run, and must not look
+        // like a clean pass: keep the other analyzers, emit an errored null state.
+        runs.push({
+          tool: { driver: { name: analyzer.id, version: analyzer.version } },
+          results: [],
+          properties: { method: "deterministic", status: "errored" },
+        });
+        analyzers.push({
+          tool: analyzer.id,
+          version: analyzer.version,
+          method: "deterministic",
+          status: "errored",
+          diagnostic: { message: e instanceof Error ? e.message : String(e) },
+        });
+      }
     }
 
     const sarif = { version: SARIF_VERSION, runs };

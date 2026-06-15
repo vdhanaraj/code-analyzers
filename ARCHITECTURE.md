@@ -136,6 +136,23 @@ id, rewrite URIs repo-relative) and any SARIF-emitting tool plugs in. Two conseq
   `externalReference` (`source` + `queriedAt` + optional pinned `version`) on the run. This is a second,
   orthogonal honesty axis alongside `method`.
 
+### Resilience — a missing tool is not a pass
+
+For developers who may not have every tool installed, a tool that *should* run but can't must never look
+like a clean result (zero findings = false confidence). So failure is **per-analyzer and into the report**,
+not a crash:
+
+- Each `AnalyzerRun` carries a `status`: `ok`, `unavailable` (tool not installed / wrong path), or
+  `errored` (tool present but the run failed). A non-`ok` run is a **null state** — empty findings plus a
+  `diagnostic`.
+- **`unavailable`** carries an OS-agnostic **install pointer** (`diagnostic.helpUrl`) — the remediation is
+  "install it". **`errored`** is a *different* case (the tool is installed; something else went wrong):
+  it carries the failure detail, not an install link.
+- The orchestrator never lets one analyzer crash the whole run — other analyzers still produce their
+  evidence. (A *contract* violation — our own bug — still fails loud.)
+- The CLI **fails closed**: any non-`ok` analyzer → non-zero exit (3), with the report still emitted so the
+  reader sees what to fix. `--allow-degraded` overrides for tolerant runs.
+
 ## Divergences from CONVENTIONS
 
 - **No `app`/`api` web split.** v1 is **library + thin CLI**, not a user-facing web surface over an HTTP

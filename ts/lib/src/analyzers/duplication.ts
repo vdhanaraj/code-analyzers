@@ -10,7 +10,8 @@ import type {
 } from "@code-analyzers/core";
 import { normalizeRepoPath } from "../paths.js";
 import { makeResult, makeRun } from "../sarif-build.js";
-import { exec } from "./exec.js";
+import { CommandNotFoundError, exec } from "./exec.js";
+import { unavailableResult } from "./null-state.js";
 
 /**
  * Duplication analyzer — wraps jscpd (token-based copy/paste detection).
@@ -23,6 +24,7 @@ import { exec } from "./exec.js";
 
 const VERSION = "1";
 const DEFAULT_BIN = "jscpd";
+const HELP_URL = "https://github.com/kucherenko/jscpd#installation";
 const DEFAULT_MIN_TOKENS = 50;
 const DEFAULT_MIN_LINES = 5;
 const DEFAULT_IGNORE = ["**/node_modules/**", "**/dist/**", "**/coverage/**", "**/_local/**"];
@@ -89,24 +91,31 @@ export function createDuplicationAnalyzer(config: Readonly<Record<string, unknow
 
       let report: JscpdReport = {};
       try {
-        await exec(
-          cfg.bin,
-          [
-            ...cfg.paths,
-            "--reporters",
-            "json",
-            "--output",
-            outDir,
-            "--silent",
-            "--min-tokens",
-            String(cfg.minTokens),
-            "--min-lines",
-            String(cfg.minLines),
-            "--ignore",
-            cfg.ignore.join(","),
-          ],
-          { cwd: cfg.cwd },
-        );
+        try {
+          await exec(
+            cfg.bin,
+            [
+              ...cfg.paths,
+              "--reporters",
+              "json",
+              "--output",
+              outDir,
+              "--silent",
+              "--min-tokens",
+              String(cfg.minTokens),
+              "--min-lines",
+              String(cfg.minLines),
+              "--ignore",
+              cfg.ignore.join(","),
+            ],
+            { cwd: cfg.cwd },
+          );
+        } catch (e) {
+          if (e instanceof CommandNotFoundError) {
+            return unavailableResult("duplication", VERSION, cfg.bin, HELP_URL);
+          }
+          throw e;
+        }
         let raw: string | undefined;
         try {
           raw = await readFile(join(outDir, "jscpd-report.json"), "utf8");

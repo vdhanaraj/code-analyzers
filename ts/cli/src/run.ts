@@ -49,6 +49,18 @@ export async function run(io: CliIO): Promise<number> {
       default:
         io.out(renderHuman(report));
     }
+
+    // Fail closed: a tool that should have run but didn't is not a clean pass.
+    // The report (with install guidance) was still emitted above.
+    const degraded = report.analyzers.filter((a) => a.status !== "ok");
+    if (degraded.length > 0 && !options.allowDegraded) {
+      io.err(
+        `error: ${degraded.length} analyzer(s) did not run (${degraded
+          .map((a) => `${a.tool}: ${a.status}`)
+          .join(", ")}). Failing closed; pass --allow-degraded to override.`,
+      );
+      return 3;
+    }
     return 0;
   } catch (e) {
     io.err(`error: ${e instanceof Error ? e.message : String(e)}`);

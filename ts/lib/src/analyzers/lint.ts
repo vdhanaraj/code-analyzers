@@ -9,7 +9,8 @@ import type {
 } from "@code-analyzers/core";
 import { normalizeRepoPath } from "../paths.js";
 import { makeResult, makeRun } from "../sarif-build.js";
-import { exec } from "./exec.js";
+import { CommandNotFoundError, exec } from "./exec.js";
+import { unavailableResult } from "./null-state.js";
 
 /**
  * Lint analyzer — wraps Biome's JSON reporter.
@@ -22,6 +23,7 @@ import { exec } from "./exec.js";
 
 const VERSION = "1";
 const DEFAULT_BIN = "biome";
+const HELP_URL = "https://biomejs.dev/guides/getting-started/";
 
 interface LintConfig {
   readonly bin: string;
@@ -97,11 +99,18 @@ export function createLintAnalyzer(config: Readonly<Record<string, unknown>>): A
     version: VERSION,
     async analyze(ctx: AnalyzerContext): Promise<AnalyzerResult> {
       const cfg = parseConfig(ctx, config);
-      const result = await exec(
-        cfg.bin,
-        ["check", "--reporter=json", "--no-errors-on-unmatched", ...cfg.paths],
-        { cwd: cfg.cwd },
-      );
+      let result: Awaited<ReturnType<typeof exec>>;
+      try {
+        result = await exec(
+          cfg.bin,
+          ["check", "--reporter=json", "--no-errors-on-unmatched", ...cfg.paths],
+          { cwd: cfg.cwd },
+        );
+      } catch (e) {
+        if (e instanceof CommandNotFoundError)
+          return unavailableResult("lint", VERSION, cfg.bin, HELP_URL);
+        throw e;
+      }
 
       const parsed = JSON.parse(result.stdout) as { diagnostics?: unknown };
       const diagnostics = Array.isArray(parsed.diagnostics) ? parsed.diagnostics : [];

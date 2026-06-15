@@ -8,7 +8,8 @@ import type {
   ExternalReference,
 } from "@code-analyzers/core";
 import { ingestSarifRun } from "../ingest-sarif.js";
-import { exec } from "./exec.js";
+import { CommandNotFoundError, exec } from "./exec.js";
+import { unavailableResult } from "./null-state.js";
 
 /**
  * Vulnerabilities analyzer — wraps osv-scanner (id `vulnerabilities`).
@@ -24,6 +25,7 @@ import { exec } from "./exec.js";
 const VERSION = "1";
 const DEFAULT_BIN = "osv-scanner";
 const ID = "vulnerabilities";
+const HELP_URL = "https://google.github.io/osv-scanner/installation/";
 
 interface VulnConfig {
   readonly bin: string;
@@ -104,19 +106,25 @@ export function createVulnerabilitiesAnalyzer(config: Readonly<Record<string, un
       const outFile = join(outDir, "osv.sarif");
       const queriedAt = new Date().toISOString();
       try {
-        await exec(
-          cfg.bin,
-          [
-            ...(cfg.subcommand ? [cfg.subcommand] : []),
-            "--format",
-            "sarif",
-            "--output",
-            outFile,
-            "-r",
-            cfg.path,
-          ],
-          { cwd: cfg.cwd },
-        );
+        try {
+          await exec(
+            cfg.bin,
+            [
+              ...(cfg.subcommand ? [cfg.subcommand] : []),
+              "--format",
+              "sarif",
+              "--output",
+              outFile,
+              "-r",
+              cfg.path,
+            ],
+            { cwd: cfg.cwd },
+          );
+        } catch (e) {
+          if (e instanceof CommandNotFoundError)
+            return unavailableResult(ID, VERSION, cfg.bin, HELP_URL);
+          throw e;
+        }
         let raw: string | undefined;
         try {
           raw = await readFile(outFile, "utf8");

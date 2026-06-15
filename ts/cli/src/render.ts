@@ -57,6 +57,18 @@ export function renderHuman(report: EvidenceReport): string {
   lines.push(`${total} findings (${toolSummary}) · ${report.measurements.length} measurements`);
   lines.push("");
 
+  // Surface analyzers that did not run BEFORE findings — a missing tool is not a
+  // clean pass, and the reader needs to know coverage is incomplete.
+  const degraded = report.analyzers.filter((a) => a.status !== "ok");
+  if (degraded.length > 0) {
+    lines.push(`⚠ ${degraded.length} analyzer(s) did NOT run — treat as incomplete, not a pass:`);
+    for (const a of degraded) {
+      lines.push(`  - ${a.tool} [${a.status}]: ${a.diagnostic?.message ?? "no detail"}`);
+      if (a.diagnostic?.helpUrl) lines.push(`      see: ${a.diagnostic.helpUrl}`);
+    }
+    lines.push("");
+  }
+
   if (report.hotZones.length === 0) {
     lines.push("Hot zones: none — no deterministic signals flagged a sub-object.");
     return lines.join("\n");
@@ -88,6 +100,11 @@ export function renderSimple(report: EvidenceReport): string {
   return JSON.stringify({
     repo: report.repo,
     schemaVersion: report.schemaVersion,
+    analyzers: report.analyzers.map((a) => ({
+      tool: a.tool,
+      status: a.status,
+      ...(a.diagnostic?.helpUrl ? { help: a.diagnostic.helpUrl } : {}),
+    })),
     findings: flattenFindings(report),
     metrics: report.measurements.map((m) => ({
       k: m.name,

@@ -2,6 +2,7 @@ import type { EvidenceReport } from "@code-analyzers/core";
 import { describe, expect, it } from "vitest";
 import { parseArgs } from "./args.js";
 import { renderHuman, renderSarif, renderSimple } from "./render.js";
+import { run } from "./run.js";
 
 describe("parseArgs", () => {
   it("defaults to all analyzers, minSignals 1, human output, current dir", () => {
@@ -108,7 +109,7 @@ const report: EvidenceReport = {
       analyzer: "coverage",
     },
   ],
-  analyzers: [{ tool: "lint", version: "1", method: "deterministic" }],
+  analyzers: [{ tool: "lint", version: "1", method: "deterministic", status: "ok" }],
   hotZones: [
     {
       scope: { repo: "demo", path: "src/a.ts", level: "path" },
@@ -142,5 +143,35 @@ describe("renderers", () => {
     expect(parsed.version).toBe("2.1.0");
     expect(parsed.runs[0].tool.driver.name).toBe("lint");
     expect(parsed.runs[0].results[0].ruleId).toBe("noVar");
+  });
+});
+
+describe("run (fail-closed on unavailable tool)", () => {
+  const argv = [
+    ".",
+    "--analyzers",
+    "secrets",
+    "--secrets-bin",
+    "/nonexistent/gitleaks-xyz",
+    "--output",
+    "simple",
+  ];
+
+  it("exits 3 and emits a null state with an install pointer when the tool is missing", async () => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await run({ argv, out: (t) => out.push(t), err: (t) => err.push(t) });
+
+    expect(code).toBe(3);
+    const parsed = JSON.parse(out[0] ?? "{}");
+    const secrets = parsed.analyzers.find((a: { tool: string }) => a.tool === "secrets");
+    expect(secrets.status).toBe("unavailable");
+    expect(secrets.help).toContain("gitleaks");
+    expect(err.join("\n")).toContain("did not run");
+  });
+
+  it("exits 0 with --allow-degraded despite the unavailable analyzer", async () => {
+    const code = await run({ argv: [...argv, "--allow-degraded"], out: () => {}, err: () => {} });
+    expect(code).toBe(0);
   });
 });

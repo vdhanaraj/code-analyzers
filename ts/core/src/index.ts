@@ -29,7 +29,9 @@ export {
 } from "./sarif.js";
 export type {
   AnalysisMethod,
+  AnalyzerDiagnostic,
   AnalyzerRun,
+  AnalyzerStatus,
   EvidenceReport,
   ExternalReference,
   HotZone,
