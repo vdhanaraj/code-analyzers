@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Address, Proof, Report } from "./index.js";
 import {
-  DIALECT_VERSION,
   ProofError,
+  SCHEMA_VERSION,
   validateAddress,
   validateProof,
   validateReport,
@@ -30,7 +30,7 @@ const goodProof: Proof = {
 };
 
 const goodReport: Report = {
-  dialect: DIALECT_VERSION,
+  schemaVersion: SCHEMA_VERSION,
   repo: "demo",
   proofs: [goodProof],
   hotZones: [],
@@ -190,13 +190,13 @@ describe("validateAddress — level/rung consistency", () => {
   });
 });
 
-describe("validateReport — dialect + cross-field invariants", () => {
+describe("validateReport — schemaVersion + cross-field invariants", () => {
   it("accepts a well-formed report", () => {
     expect(validateReport(goodReport)).toEqual(goodReport);
   });
 
-  it("rejects an unsupported dialect", () => {
-    expect(() => validateReport({ ...goodReport, dialect: "0" })).toThrow(/dialect/);
+  it("rejects an unsupported schemaVersion", () => {
+    expect(() => validateReport({ ...goodReport, schemaVersion: "0" })).toThrow(/schemaVersion/);
   });
 
   it("rejects a proof whose scope.repo disagrees with the report repo", () => {

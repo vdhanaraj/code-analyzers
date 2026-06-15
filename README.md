@@ -8,9 +8,9 @@ other. It produces evidence *for* downstream inference; it contains **no LLM hop
 - **What it is and why** → [ARCHITECTURE.md](ARCHITECTURE.md) (the durable truth)
 - **House style** → [CONVENTIONS.md](CONVENTIONS.md) (project-agnostic conventions)
 
-> Status: **v1 (dialect v1).** Coverage + lint analyzers behind one shape, a
+> Status: **v1 (schema v1).** Coverage + lint analyzers behind one shape, a
 > deterministic hot-zone report, and a thin CLI over the `CodeAnalyzer` library.
-> The proof dialect is expected to churn (v1 → v3–4) during early iteration.
+> The proof schema is expected to churn (v1 → v3–4) during early iteration.
 
 ## Quickstart
 
@@ -28,7 +28,7 @@ node ts/cli/dist/index.js <repo> \
 node ts/cli/dist/index.js --help
 ```
 
-The CLI emits a dialect-versioned proof report (`--json`) or a human-readable
+The CLI emits a schema-versioned proof report (`--json`) or a human-readable
 attention guide (default). It contains **no LLM hop** — the artifacts are
 evidence *for* a downstream consumer's single inference hop.
 

@@ -2,7 +2,7 @@
  * @code-analyzers/lib — the orchestration layer.
  *
  * The exported {@link CodeAnalyzer} class runs analyzers behind the universal
- * interface, validates at the seam, and assembles a dialect-stamped report with
+ * interface, validates at the seam, and assembles a schema-versioned report with
  * a deterministic hot-zone rollup. {@link defaultRegistry} is the built-in
  * wiring point (coverage + lint).
  */

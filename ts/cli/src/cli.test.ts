@@ -59,7 +59,7 @@ describe("parseArgs", () => {
 });
 
 const report: Report = {
-  dialect: "1",
+  schemaVersion: "1",
   repo: "demo",
   proofs: [
     {

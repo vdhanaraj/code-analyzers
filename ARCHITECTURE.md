@@ -44,7 +44,7 @@ it, carrying enough provenance and scope to be trusted and combined with others:
 - `result` — the deterministic measure.
 - `provenance` — `tool` + `version` + `config` + `inputsHash`, plus `method`
   (`deterministic` | `inferred`). v1 analyzers always emit `deterministic`. The enum is reserved now so a
-  future LLM-backed analyzer slots in without a dialect-breaking change, and so a downstream reasoner can
+  future LLM-backed analyzer slots in without a schema-breaking change, and so a downstream reasoner can
   **never mistake an inferred result for hard fact**.
 - `scope` — the sub-object of the codebase the proof addresses.
 - `metrics` — named numeric measures (`{ name → value }`), first-class **time-series** citizens: graphable
@@ -75,11 +75,12 @@ better/worse verdicts. Two reasons:
 2. **Attention-focusing is the value floor.** Hot zones never *lose* value as the tools and process
    evolve, so they are the safest thing to ship first.
 
-### The dialect
+### The schema version
 
-Every emitted artifact is JSON stamped with a **`dialect` version**. The schema is *expected* to churn
-(v1 → v3–4 during solo iteration before anyone else is looped in), so versioning the envelope from line
-one de-risks every change.
+Every emitted artifact is JSON stamped with a **`schemaVersion`** (aligned with the SARIF/Docker
+convention of a self-describing version field). The schema is *expected* to churn (v1 → v3–4 during solo
+iteration before anyone else is looped in), so versioning the envelope from line one de-risks every
+change.
 
 ## System shape
 
@@ -88,7 +89,7 @@ first, CLI thin** — the durable artifact is a well-documented exported class; 
 the tool composes across CI/CD, agentic harnesses, ad-hoc runs against any repo, and a future company-wide
 auditing service.
 
-- **`ts/core`** — the contract: the dialect-versioned proof schema (incl. `provenance.method`), normalized
+- **`ts/core`** — the contract: the versioned proof schema (`schemaVersion`, incl. `provenance.method`), normalized
   address types, named-metric types, and the `Analyzer` interface. **Language-neutral** — TypeScript is
   the first *analyzed* language, but the contract never assumes it (polyglot is a goal).
 - **`ts/lib`** — the exported orchestration class: walk the repo → run the registered analyzers →
@@ -114,7 +115,7 @@ auditing service.
 
 ## Data model
 
-The **proof dialect (v1)** — shapes are illustrative, not yet frozen; `ts/core` is the source of truth
+The **proof schema (v1)** — shapes are illustrative, not yet frozen; `ts/core` is the source of truth
 once written.
 
 ```
@@ -140,8 +141,8 @@ Address {                        // normalized hierarchical coordinate
 }
 
 Report {
-  dialect:  string               // dialect version stamp
-  proofs:   Proof[]
-  hotZones: <attention-guiding rollup, deterministic>
+  schemaVersion: string          // proof-schema version stamp
+  proofs:        Proof[]
+  hotZones:      <attention-guiding rollup, deterministic>
 }
 ```

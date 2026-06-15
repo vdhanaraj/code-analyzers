@@ -1,5 +1,4 @@
 import type { Address, Range } from "./address.js";
-import { DIALECT_VERSION } from "./dialect.js";
 import {
   type Metric,
   type Proof,
@@ -9,6 +8,7 @@ import {
   SEVERITIES,
   type Severity,
 } from "./proof.js";
+import { SCHEMA_VERSION } from "./schema.js";
 
 /**
  * Hand-written validators (no external schema library) so `core` depends on
@@ -159,8 +159,11 @@ export function validateProof(v: unknown, path = "proof"): Proof {
 
 export function validateReport(v: unknown, path = "report"): Report {
   if (!isObject(v)) throw new ProofError("expected object", path);
-  if (v.dialect !== DIALECT_VERSION) {
-    throw new ProofError(`unsupported dialect (expected "${DIALECT_VERSION}")`, `${path}.dialect`);
+  if (v.schemaVersion !== SCHEMA_VERSION) {
+    throw new ProofError(
+      `unsupported schemaVersion (expected "${SCHEMA_VERSION}")`,
+      `${path}.schemaVersion`,
+    );
   }
   const repo = reqString(v.repo, `${path}.repo`);
   if (!Array.isArray(v.proofs)) throw new ProofError("expected array", `${path}.proofs`);
@@ -191,5 +194,5 @@ export function validateReport(v: unknown, path = "report"): Report {
       reasons: z.reasons.map((r, j) => reqString(r, `${path}.hotZones[${i}].reasons[${j}]`)),
     };
   });
-  return { dialect: DIALECT_VERSION, repo, proofs, hotZones };
+  return { schemaVersion: SCHEMA_VERSION, repo, proofs, hotZones };
 }

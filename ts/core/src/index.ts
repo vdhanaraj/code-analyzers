@@ -1,11 +1,11 @@
 /**
  * @code-analyzers/core — the contract.
  *
- * The dialect-versioned proof schema, normalized addressing, named metrics, and
+ * The versioned proof schema, normalized addressing, named metrics, and
  * the universal `Analyzer` interface. Language-neutral: TypeScript is the first
  * *analyzed* language, but nothing here assumes it (polyglot is a goal).
  */
-export { DIALECT_VERSION, type DialectVersion } from "./dialect.js";
+export { SCHEMA_VERSION, type SchemaVersion } from "./schema.js";
 export type { Address, AddressLevel, Range } from "./address.js";
 export {
   SEVERITIES,

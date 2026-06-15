@@ -1,5 +1,5 @@
 import type { Address } from "./address.js";
-import type { DialectVersion } from "./dialect.js";
+import type { SchemaVersion } from "./schema.js";
 
 /**
  * How a result was produced.
@@ -8,7 +8,7 @@ import type { DialectVersion } from "./dialect.js";
  * `inferred`      — produced (in whole or part) by a non-deterministic model.
  *
  * v1 analyzers always emit `deterministic`. The `inferred` value is reserved
- * now so a future LLM-backed analyzer slots in without a dialect-breaking
+ * now so a future LLM-backed analyzer slots in without a schema-breaking
  * change, and so a downstream reasoner can *never* mistake an inferred result
  * for hard fact. This honesty is the property the whole thesis rests on.
  */
@@ -69,7 +69,7 @@ export interface Proof {
 /**
  * The deterministic outcome. A discriminated union so a boolean-ish lint pass,
  * a coverage measure, and a finding all share one envelope while staying
- * honestly typed. The set is open-by-version — new kinds arrive with a dialect
+ * honestly typed. The set is open-by-version — new kinds arrive with a schemaVersion
  * bump, and consumers branch on `kind`.
  */
 export type ProofResult =
@@ -77,9 +77,9 @@ export type ProofResult =
   | { readonly kind: "measure"; readonly value: number; readonly unit?: string }
   | { readonly kind: "finding"; readonly rule: string; readonly message: string };
 
-/** A complete, self-describing report: the dialect-stamped set of proofs. */
+/** A complete, self-describing report: the schema-version-stamped set of proofs. */
 export interface Report {
-  readonly dialect: DialectVersion;
+  readonly schemaVersion: SchemaVersion;
   /** The repo the report covers (matches every proof's `scope.repo`). */
   readonly repo: string;
   readonly proofs: readonly Proof[];

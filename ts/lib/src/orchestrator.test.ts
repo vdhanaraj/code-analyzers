@@ -22,7 +22,7 @@ const validProof = (repo: string, path: string): Proof => ({
 });
 
 describe("CodeAnalyzer", () => {
-  it("assembles a dialect-stamped report and defaults repo from repoRoot basename", async () => {
+  it("assembles a schema-version-stamped report and defaults repo from repoRoot basename", async () => {
     const registry = registryWith(
       fakeAnalyzer("stub", (ctx) => [validProof(ctx.repo, "src/a.ts")]),
     );
@@ -32,7 +32,7 @@ describe("CodeAnalyzer", () => {
       registry,
     }).run();
 
-    expect(report.dialect).toBe("1");
+    expect(report.schemaVersion).toBe("1");
     expect(report.repo).toBe("my-repo");
     expect(report.proofs).toHaveLength(1);
     expect(report.hotZones).toHaveLength(1);

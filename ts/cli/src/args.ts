@@ -106,7 +106,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 
 export const HELP = `code-analyzers — a universal interface around code-analysis tools.
 
-Runs analyzers behind one shape and emits dialect-versioned proofs plus an
+Runs analyzers behind one shape and emits schema-versioned proofs plus an
 attention-guiding "hot zones" report. It produces evidence FOR downstream
 inference; it contains no LLM hop of its own.
 

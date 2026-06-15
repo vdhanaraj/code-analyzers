@@ -2,10 +2,10 @@ import { resolve } from "node:path";
 import { basename } from "node:path";
 import {
   type AnalyzerContext,
-  DIALECT_VERSION,
   type Proof,
   ProofError,
   type Report,
+  SCHEMA_VERSION,
   validateProof,
   validateReport,
 } from "@code-analyzers/core";
@@ -34,7 +34,7 @@ export interface CodeAnalyzerOptions {
   readonly minSignals?: number;
 }
 
-/** Thrown when an analyzer emits a proof that violates the dialect contract. */
+/** Thrown when an analyzer emits a proof that violates the schema contract. */
 export class AnalyzerContractError extends Error {
   constructor(
     readonly analyzerId: string,
@@ -50,7 +50,7 @@ export class AnalyzerContractError extends Error {
  * wrapper over this). Give it a repo and a set of analyzers; it runs each behind
  * the universal `Analyzer` interface, validates every emitted proof at the seam
  * (so a buggy analyzer fails closed rather than poisoning the report), derives
- * the deterministic hot-zone rollup, and returns a dialect-stamped {@link Report}.
+ * the deterministic hot-zone rollup, and returns a schema-versioned {@link Report}.
  *
  * It contains no LLM hop: it produces evidence artifacts *for* downstream
  * inference. The single short inference hop lives in the consumer, never here.
@@ -84,7 +84,7 @@ export class CodeAnalyzer {
     }
 
     const report: Report = {
-      dialect: DIALECT_VERSION,
+      schemaVersion: SCHEMA_VERSION,
       repo: this.repo,
       proofs,
       hotZones: computeHotZones(proofs, { minSignals: this.minSignals }),

@@ -7,7 +7,7 @@ import type { Proof, Report } from "@code-analyzers/core";
  */
 export function renderReport(report: Report): string {
   const lines: string[] = [];
-  lines.push(`code-analyzers · repo "${report.repo}" · dialect v${report.dialect}`);
+  lines.push(`code-analyzers · repo "${report.repo}" · schema v${report.schemaVersion}`);
 
   const byTool = new Map<string, number>();
   for (const p of report.proofs) {
