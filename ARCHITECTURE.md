@@ -116,7 +116,9 @@ auditing service.
 - **Analyzers behind a stable `Analyzer` interface at a single wiring point.** Run by default (binaries
   come as npm dev-deps): **coverage** (the strategic primitive — **runs the test suite with coverage
   itself**, no pre-step, then ingests the Istanbul report; `--coverage-skip-run` ingests an existing one),
-  **lint** (Biome), **duplication** (jscpd).
+  **lint** (**Biome or ESLint**, auto-detected by config file), **duplication** (jscpd). npm-delivered
+  tools resolve from the project's local `node_modules/.bin` before PATH, so a repo that already has them
+  as devDeps needs no global install.
   **Opt-in** (wrap external binaries the user installs; not in the default set so a missing binary never
   breaks a default run): **secrets** (gitleaks) and **vulnerabilities** (osv-scanner). Analyzers are named
   by **role, not tool** (per CONVENTIONS), matching `lint`/`coverage`. Each normalizes its tool's output to

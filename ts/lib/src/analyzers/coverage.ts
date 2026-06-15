@@ -7,6 +7,7 @@ import type {
   Measurement,
   SarifResult,
 } from "@code-analyzers/core";
+import { resolveBin } from "../bin-resolve.js";
 import { sha256 } from "../hash.js";
 import { normalizeRepoPath } from "../paths.js";
 import { makeResult, makeRun } from "../sarif-build.js";
@@ -55,13 +56,15 @@ function parseConfig(
   ctx: AnalyzerContext,
   config: Readonly<Record<string, unknown>>,
 ): CoverageConfig {
+  const cwd = typeof config.cwd === "string" ? config.cwd : ctx.repoRoot;
   return {
-    bin: typeof config.bin === "string" ? config.bin : DEFAULT_BIN,
+    // Prefer the project's local node_modules/.bin/vitest over a global install.
+    bin: typeof config.bin === "string" ? config.bin : resolveBin(DEFAULT_BIN, cwd, ctx.repoRoot),
     args:
       Array.isArray(config.args) && config.args.every((a) => typeof a === "string")
         ? (config.args as string[])
         : DEFAULT_ARGS,
-    cwd: typeof config.cwd === "string" ? config.cwd : ctx.repoRoot,
+    cwd,
     report: typeof config.report === "string" ? config.report : DEFAULT_REPORT,
     threshold:
       typeof config.threshold === "number" && Number.isFinite(config.threshold)

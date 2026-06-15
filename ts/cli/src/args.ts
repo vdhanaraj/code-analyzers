@@ -107,6 +107,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   if (flags.has("threshold")) coverage.threshold = Number(flags.get("threshold"));
   if (booleans.has("coverage-skip-run")) coverage.skipRun = true;
   const lint: Record<string, unknown> = {};
+  set(lint, "tool", "lint-tool");
   set(lint, "bin", "lint-bin");
   set(lint, "cwd", "lint-cwd");
   set(lint, "paths", "lint-paths", true);
@@ -194,8 +195,9 @@ OPTIONS
                                            (default: "coverage/coverage-final.json")
                --coverage-skip-run       ingest an existing report; don't run tests
                --threshold <pct>         flag files below this (default: 80)
-  lint:        --lint-bin <path>         Biome binary (default: "biome")
-               --lint-cwd <path>         working dir for Biome (default: repo)
+  lint:        --lint-tool <biome|eslint>  default: detect by config file
+               --lint-bin <path>         linter binary (default: local node_modules/.bin)
+               --lint-cwd <path>         working dir for the linter (default: repo)
                --lint-paths <list>       comma list of paths (default: ".")
   duplication: --dup-bin <path>          jscpd binary (default: "jscpd")
                --dup-cwd <path>          working dir for jscpd (default: repo)

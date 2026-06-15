@@ -8,6 +8,7 @@ import type {
   Measurement,
   SarifResult,
 } from "@code-analyzers/core";
+import { resolveBin } from "../bin-resolve.js";
 import { normalizeRepoPath } from "../paths.js";
 import { makeResult, makeRun } from "../sarif-build.js";
 import { CommandNotFoundError, exec } from "./exec.js";
@@ -71,9 +72,11 @@ function parseConfig(
   ctx: AnalyzerContext,
   config: Readonly<Record<string, unknown>>,
 ): DuplicationConfig {
+  const cwd = typeof config.cwd === "string" ? config.cwd : ctx.repoRoot;
   return {
-    bin: typeof config.bin === "string" ? config.bin : DEFAULT_BIN,
-    cwd: typeof config.cwd === "string" ? config.cwd : ctx.repoRoot,
+    // Prefer the project's local node_modules/.bin/jscpd over a global install.
+    bin: typeof config.bin === "string" ? config.bin : resolveBin(DEFAULT_BIN, cwd, ctx.repoRoot),
+    cwd,
     paths: asStringArray(config.paths, ["."]),
     minTokens: asNumber(config.minTokens, DEFAULT_MIN_TOKENS),
     minLines: asNumber(config.minLines, DEFAULT_MIN_LINES),
