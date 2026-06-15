@@ -98,8 +98,9 @@ auditing service.
 - **`ts/cli`** — a thin wrapper over `ts/lib`. Plays the `app` role; the user-facing surface is a **CLI,
   not a web app**.
 - **Analyzers behind a stable `Analyzer` interface at a single wiring point.** v1 registers **coverage**
-  (the strategic primitive — compounding downstream work) and **lint**. Adding an analyzer = a module plus
-  a case at the wiring point; nothing else changes.
+  (the strategic primitive — compounding downstream work), **lint** (wraps Biome), and **duplication**
+  (wraps jscpd — token-based clone detection, language-agnostic). Adding an analyzer = a module plus a
+  case at the wiring point; nothing else changes.
 
 ## Divergences from CONVENTIONS
 

@@ -4,15 +4,33 @@ import { parseArgs } from "./args.js";
 import { renderReport } from "./render.js";
 
 describe("parseArgs", () => {
-  it("defaults to both analyzers, minSignals 1, current dir", () => {
+  it("defaults to all analyzers, minSignals 1, current dir", () => {
     const parsed = parseArgs([]);
     expect(parsed).toMatchObject({
       kind: "run",
       options: { repoRoot: ".", minSignals: 1, json: false },
     });
     if (parsed.kind === "run") {
-      expect(parsed.options.analyzers.map((a) => a.id)).toEqual(["coverage", "lint"]);
+      expect(parsed.options.analyzers.map((a) => a.id)).toEqual([
+        "coverage",
+        "lint",
+        "duplication",
+      ]);
     }
+  });
+
+  it("threads duplication config (cwd, min-tokens)", () => {
+    const parsed = parseArgs([
+      "--analyzers",
+      "duplication",
+      "--dup-cwd",
+      "ts",
+      "--dup-min-tokens",
+      "30",
+    ]);
+    if (parsed.kind !== "run") throw new Error("expected run");
+    const dup = parsed.options.analyzers.find((a) => a.id === "duplication");
+    expect(dup?.config).toMatchObject({ cwd: "ts", minTokens: 30 });
   });
 
   it("returns help for --help", () => {

@@ -14,7 +14,7 @@ export interface RunOptions {
   readonly json: boolean;
 }
 
-const KNOWN_ANALYZERS = new Set(["coverage", "lint"]);
+const KNOWN_ANALYZERS = new Set(["coverage", "lint", "duplication"]);
 
 function splitList(value: string): string[] {
   return value
@@ -62,12 +62,12 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 
   const requested = flags.has("analyzers")
     ? splitList(flags.get("analyzers") as string)
-    : ["coverage", "lint"];
+    : ["coverage", "lint", "duplication"];
   const unknown = requested.filter((id) => !KNOWN_ANALYZERS.has(id));
   if (unknown.length > 0) {
     return {
       kind: "error",
-      message: `unknown analyzer(s): ${unknown.join(", ")}. Known: coverage, lint`,
+      message: `unknown analyzer(s): ${unknown.join(", ")}. Known: coverage, lint, duplication`,
     };
   }
 
@@ -78,17 +78,22 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   }
 
   const analyzers: AnalyzerSpec[] = requested.map((id) => {
+    const config: Record<string, unknown> = {};
     if (id === "coverage") {
-      const config: Record<string, unknown> = {};
       if (flags.has("coverage-report")) config.report = flags.get("coverage-report");
       if (flags.has("threshold")) config.threshold = Number(flags.get("threshold"));
-      return { id, config };
+    } else if (id === "lint") {
+      if (flags.has("lint-bin")) config.bin = flags.get("lint-bin");
+      if (flags.has("lint-cwd")) config.cwd = flags.get("lint-cwd");
+      if (flags.has("lint-paths")) config.paths = splitList(flags.get("lint-paths") as string);
+    } else {
+      // duplication
+      if (flags.has("dup-bin")) config.bin = flags.get("dup-bin");
+      if (flags.has("dup-cwd")) config.cwd = flags.get("dup-cwd");
+      if (flags.has("dup-paths")) config.paths = splitList(flags.get("dup-paths") as string);
+      if (flags.has("dup-min-tokens")) config.minTokens = Number(flags.get("dup-min-tokens"));
+      if (flags.has("dup-min-lines")) config.minLines = Number(flags.get("dup-min-lines"));
     }
-    // lint
-    const config: Record<string, unknown> = {};
-    if (flags.has("lint-bin")) config.bin = flags.get("lint-bin");
-    if (flags.has("lint-cwd")) config.cwd = flags.get("lint-cwd");
-    if (flags.has("lint-paths")) config.paths = splitList(flags.get("lint-paths") as string);
     return { id, config };
   });
 
@@ -117,17 +122,22 @@ ARGUMENTS
   path                      repo working tree to analyze (default: ".")
 
 OPTIONS
-  -a, --analyzers <list>    comma list: coverage,lint (default: both)
+  -a, --analyzers <list>    comma list: coverage,lint,duplication (default: all)
       --repo <name>         logical repo id stamped into addresses
       --min-signals <n>     min distinct tools to flag a hot zone (default: 1)
       --json                emit the full proof report as JSON
   -h, --help                show this help
 
-  coverage:  --coverage-report <path>   Istanbul coverage-final.json
-             --threshold <pct>          flag files below this (default: 80)
-  lint:      --lint-bin <path>          Biome binary (default: "biome")
-             --lint-cwd <path>          working dir for Biome (default: repo)
-             --lint-paths <list>        comma list of paths (default: ".")
+  coverage:    --coverage-report <path>  Istanbul coverage-final.json
+               --threshold <pct>         flag files below this (default: 80)
+  lint:        --lint-bin <path>         Biome binary (default: "biome")
+               --lint-cwd <path>         working dir for Biome (default: repo)
+               --lint-paths <list>       comma list of paths (default: ".")
+  duplication: --dup-bin <path>          jscpd binary (default: "jscpd")
+               --dup-cwd <path>          working dir for jscpd (default: repo)
+               --dup-paths <list>        comma list of paths (default: ".")
+               --dup-min-tokens <n>      min token run to call a clone (def: 50)
+               --dup-min-lines <n>       min line run to call a clone (def: 5)
 
 EXAMPLES
   code-analyzers . --analyzers lint --lint-cwd ts
