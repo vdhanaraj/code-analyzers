@@ -114,7 +114,9 @@ auditing service.
 - **`ts/cli`** — a thin wrapper over `ts/lib`. Plays the `app` role; the user-facing surface is a **CLI,
   not a web app**.
 - **Analyzers behind a stable `Analyzer` interface at a single wiring point.** Run by default (binaries
-  come as npm dev-deps): **coverage** (the strategic primitive), **lint** (Biome), **duplication** (jscpd).
+  come as npm dev-deps): **coverage** (the strategic primitive — **runs the test suite with coverage
+  itself**, no pre-step, then ingests the Istanbul report; `--coverage-skip-run` ingests an existing one),
+  **lint** (Biome), **duplication** (jscpd).
   **Opt-in** (wrap external binaries the user installs; not in the default set so a missing binary never
   breaks a default run): **secrets** (gitleaks) and **vulnerabilities** (osv-scanner). Analyzers are named
   by **role, not tool** (per CONVENTIONS), matching `lint`/`coverage`. Each normalizes its tool's output to

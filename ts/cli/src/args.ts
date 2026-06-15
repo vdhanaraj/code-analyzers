@@ -54,6 +54,10 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       booleans.add("allow-degraded");
       continue;
     }
+    if (token === "--coverage-skip-run") {
+      booleans.add("coverage-skip-run");
+      continue;
+    }
     if (token.startsWith("--")) {
       const body = token.slice(2);
       const eq = body.indexOf("=");
@@ -94,8 +98,12 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   const analyzers: AnalyzerSpec[] = requested.map((id) => {
     const config: Record<string, unknown> = {};
     if (id === "coverage") {
+      if (flags.has("coverage-bin")) config.bin = flags.get("coverage-bin");
+      if (flags.has("coverage-args")) config.args = splitList(flags.get("coverage-args") as string);
+      if (flags.has("coverage-cwd")) config.cwd = flags.get("coverage-cwd");
       if (flags.has("coverage-report")) config.report = flags.get("coverage-report");
       if (flags.has("threshold")) config.threshold = Number(flags.get("threshold"));
+      if (booleans.has("coverage-skip-run")) config.skipRun = true;
     } else if (id === "lint") {
       if (flags.has("lint-bin")) config.bin = flags.get("lint-bin");
       if (flags.has("lint-cwd")) config.cwd = flags.get("lint-cwd");
@@ -171,7 +179,13 @@ OPTIONS
                               fail closed with exit 3)
   -h, --help                show this help
 
-  coverage:    --coverage-report <path>  Istanbul coverage-final.json
+  coverage:    runs your tests with coverage, then ingests the report
+               --coverage-bin <path>     test runner (default: "vitest")
+               --coverage-args <list>    comma list (default: "run,--coverage")
+               --coverage-cwd <path>     working dir for the run (default: repo)
+               --coverage-report <path>  Istanbul coverage-final.json it emits
+                                           (default: "coverage/coverage-final.json")
+               --coverage-skip-run       ingest an existing report; don't run tests
                --threshold <pct>         flag files below this (default: 80)
   lint:        --lint-bin <path>         Biome binary (default: "biome")
                --lint-cwd <path>         working dir for Biome (default: repo)

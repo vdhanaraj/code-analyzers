@@ -22,13 +22,14 @@ other. It produces evidence *for* downstream inference; it contains **no LLM hop
 ```bash
 cd ts && pnpm install          # workspace deps (run `pnpm install` at root for hooks too)
 pnpm -C ts build               # compile core/lib/cli
-pnpm run analyze:self          # build + coverage + run the CLI against this repo
+pnpm run analyze:self          # build + run the CLI against this repo (no pre-steps)
 
-# General use (library is the durable surface; CLI is a thin wrapper):
-# (point --coverage-report at whatever coverage artifact the target repo emits;
-#  for this repo, `pnpm run coverage` writes it under _local/tmp/coverage/)
+# General use (library is the durable surface; CLI is a thin wrapper).
+# coverage RUNS your tests with coverage itself — configure the command and where
+# it writes the Istanbul report (or pass --coverage-skip-run to ingest an existing one):
 node ts/cli/dist/index.js <repo> \
-  --coverage-report <path/to/coverage-final.json> \
+  --coverage-bin <test-runner> --coverage-args run,--coverage \
+  --coverage-cwd <dir> --coverage-report <path/to/coverage-final.json> \
   --lint-cwd <dir> --lint-bin <path/to/biome> \
   --output <human|report|simple|sarif>
 node ts/cli/dist/index.js --help

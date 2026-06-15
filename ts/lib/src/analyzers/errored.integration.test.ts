@@ -1,5 +1,6 @@
 import type { Analyzer, AnalyzerContext } from "@code-analyzers/core";
 import { describe, expect, it } from "vitest";
+import { createCoverageAnalyzer } from "./coverage.js";
 import { createDuplicationAnalyzer } from "./duplication.js";
 import { createLintAnalyzer } from "./lint.js";
 import { createSecretsAnalyzer } from "./secrets.js";
@@ -11,6 +12,7 @@ import { createVulnerabilitiesAnalyzer } from "./vulnerabilities.js";
 const ctx: AnalyzerContext = { repoRoot: process.cwd(), repo: "demo" };
 
 const cases: Array<[string, Analyzer]> = [
+  ["coverage", createCoverageAnalyzer({ bin: "false", cwd: process.cwd(), report: "nope/x.json" })],
   ["lint", createLintAnalyzer({ bin: "false", cwd: process.cwd() })],
   ["duplication", createDuplicationAnalyzer({ bin: "false", cwd: process.cwd() })],
   ["secrets", createSecretsAnalyzer({ bin: "false", cwd: process.cwd() })],
