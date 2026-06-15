@@ -1,5 +1,6 @@
-import { readFile } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
 import type {
   Analyzer,
   AnalyzerContext,
@@ -31,18 +32,21 @@ import { erroredResult, unavailableResult } from "./null-state.js";
 const VERSION = "1";
 const ID = "coverage";
 const DEFAULT_BIN = "vitest";
-const DEFAULT_ARGS = ["run", "--coverage"];
 const DEFAULT_REPORT = "coverage/coverage-final.json";
 const DEFAULT_THRESHOLD = 80;
 const HELP_URL = "https://vitest.dev/guide/coverage";
 
 interface CoverageConfig {
   readonly bin: string;
-  readonly args: readonly string[];
   readonly cwd: string;
-  readonly report: string;
   readonly threshold: number;
   readonly skipRun: boolean;
+  /** User-supplied test command args (with `{reportsDir}` placeholder), if any. */
+  readonly argsProvided: boolean;
+  readonly args: readonly string[];
+  /** User-supplied report path, if any (else we force JSON into a temp dir). */
+  readonly reportProvided: boolean;
+  readonly report: string;
 }
 
 interface IstanbulEntry {
@@ -57,20 +61,22 @@ function parseConfig(
   config: Readonly<Record<string, unknown>>,
 ): CoverageConfig {
   const cwd = typeof config.cwd === "string" ? config.cwd : ctx.repoRoot;
+  const argsProvided =
+    Array.isArray(config.args) && config.args.every((a) => typeof a === "string");
+  const reportProvided = typeof config.report === "string";
   return {
     // Prefer the project's local node_modules/.bin/vitest over a global install.
     bin: typeof config.bin === "string" ? config.bin : resolveBin(DEFAULT_BIN, cwd, ctx.repoRoot),
-    args:
-      Array.isArray(config.args) && config.args.every((a) => typeof a === "string")
-        ? (config.args as string[])
-        : DEFAULT_ARGS,
     cwd,
-    report: typeof config.report === "string" ? config.report : DEFAULT_REPORT,
     threshold:
       typeof config.threshold === "number" && Number.isFinite(config.threshold)
         ? config.threshold
         : DEFAULT_THRESHOLD,
     skipRun: config.skipRun === true,
+    argsProvided,
+    args: argsProvided ? (config.args as string[]) : [],
+    reportProvided,
+    report: reportProvided ? (config.report as string) : DEFAULT_REPORT,
   };
 }
 
@@ -159,47 +165,88 @@ function buildResult(
   };
 }
 
+/** Read + parse an Istanbul report into proofs, or an errored null state. */
+async function ingest(
+  ctx: AnalyzerContext,
+  threshold: number,
+  reportPath: string,
+  missingDetail: string,
+  stderr?: string,
+): Promise<AnalyzerResult> {
+  let raw: string;
+  try {
+    raw = await readFile(reportPath, "utf8");
+  } catch {
+    return erroredResult(ID, VERSION, missingDetail, stderr !== undefined ? { stderr } : {});
+  }
+  try {
+    return buildResult(ctx, threshold, JSON.parse(raw) as Record<string, IstanbulEntry>);
+  } catch {
+    return erroredResult(ID, VERSION, `coverage report at ${reportPath} is not valid JSON`);
+  }
+}
+
 export function createCoverageAnalyzer(config: Readonly<Record<string, unknown>>): Analyzer {
   return {
     id: ID,
     version: VERSION,
     async analyze(ctx: AnalyzerContext): Promise<AnalyzerResult> {
       const cfg = parseConfig(ctx, config);
-      const reportPath = isAbsolute(cfg.report) ? cfg.report : resolve(cfg.cwd, cfg.report);
+      const resolveReport = (p: string) => (isAbsolute(p) ? p : resolve(cfg.cwd, p));
 
-      // Run the test suite with coverage (unless asked to ingest an existing report).
-      let exitCode = 0;
-      let stderr = "";
-      if (!cfg.skipRun) {
+      // Ingest mode: read an already-produced report; don't run the suite.
+      if (cfg.skipRun) {
+        return ingest(
+          ctx,
+          cfg.threshold,
+          resolveReport(cfg.report),
+          `no coverage report at ${cfg.report} (skipRun set; run coverage first)`,
+        );
+      }
+
+      // Run mode. By default we FORCE vitest's json reporter into a temp dir, so
+      // it works regardless of the repo's coverage config. A custom --coverage-args
+      // (with {reportsDir}) or --coverage-report opts out and controls output.
+      const reportsDir = await mkdtemp(join(tmpdir(), "ca-cov-"));
+      try {
+        let args: string[];
+        let reportPath: string;
+        if (cfg.argsProvided) {
+          args = cfg.args.map((a) => a.replaceAll("{reportsDir}", reportsDir));
+          reportPath = cfg.reportProvided
+            ? resolveReport(cfg.report)
+            : join(reportsDir, "coverage-final.json");
+        } else if (cfg.reportProvided) {
+          args = ["run", "--coverage"];
+          reportPath = resolveReport(cfg.report);
+        } else {
+          args = [
+            "run",
+            "--coverage",
+            "--coverage.reporter=json",
+            `--coverage.reportsDirectory=${reportsDir}`,
+          ];
+          reportPath = join(reportsDir, "coverage-final.json");
+        }
+
+        let run: Awaited<ReturnType<typeof exec>>;
         try {
-          const run = await exec(cfg.bin, cfg.args, { cwd: cfg.cwd });
-          exitCode = run.code;
-          stderr = run.stderr;
+          run = await exec(cfg.bin, args, { cwd: cfg.cwd });
         } catch (e) {
           if (e instanceof CommandNotFoundError)
             return unavailableResult(ID, VERSION, cfg.bin, HELP_URL);
           throw e;
         }
+        return ingest(
+          ctx,
+          cfg.threshold,
+          reportPath,
+          `"${cfg.bin} ${args.join(" ")}" exited with code ${run.code} and produced no coverage report at ${reportPath} — ensure a coverage provider is installed`,
+          run.stderr,
+        );
+      } finally {
+        await rm(reportsDir, { recursive: true, force: true });
       }
-
-      let raw: string;
-      try {
-        raw = await readFile(reportPath, "utf8");
-      } catch {
-        const detail = cfg.skipRun
-          ? `no coverage report at ${cfg.report} (skipRun set; run coverage first)`
-          : `"${cfg.bin} ${cfg.args.join(" ")}" exited with code ${exitCode} and produced no coverage report at ${cfg.report}`;
-        return erroredResult(ID, VERSION, detail, cfg.skipRun ? {} : { stderr });
-      }
-
-      let data: Record<string, IstanbulEntry>;
-      try {
-        data = JSON.parse(raw) as Record<string, IstanbulEntry>;
-      } catch {
-        return erroredResult(ID, VERSION, `coverage report at ${cfg.report} is not valid JSON`);
-      }
-
-      return buildResult(ctx, cfg.threshold, data);
     },
   };
 }

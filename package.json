@@ -17,7 +17,7 @@
     "coverage": "pnpm -C ts exec vitest run --coverage",
     "lint": "pnpm -C ts lint",
     "format": "pnpm -C ts format",
-    "analyze:self": "pnpm build && node ts/cli/dist/index.js . --coverage-bin \"$PWD/ts/node_modules/.bin/vitest\" --coverage-cwd \"$PWD/ts\" --coverage-report \"$PWD/_local/tmp/coverage/coverage-final.json\" --lint-cwd \"$PWD/ts\" --lint-bin \"$PWD/ts/node_modules/.bin/biome\" --dup-cwd \"$PWD/ts\" --dup-bin \"$PWD/ts/node_modules/.bin/jscpd\"",
+    "analyze:self": "pnpm build && node ts/cli/dist/index.js . --analyzers coverage,lint,duplication --coverage-cwd \"$PWD/ts\" --lint-cwd \"$PWD/ts\" --dup-cwd \"$PWD/ts\"",
     "clean": "rm -rf ts/core/dist ts/lib/dist ts/cli/dist _local/tmp"
   },
   "devDependencies": {

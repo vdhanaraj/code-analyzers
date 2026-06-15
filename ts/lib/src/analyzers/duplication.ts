@@ -28,7 +28,18 @@ const DEFAULT_BIN = "jscpd";
 const HELP_URL = "https://github.com/kucherenko/jscpd#installation";
 const DEFAULT_MIN_TOKENS = 50;
 const DEFAULT_MIN_LINES = 5;
-const DEFAULT_IGNORE = ["**/node_modules/**", "**/dist/**", "**/coverage/**", "**/_local/**"];
+const DEFAULT_IGNORE = [
+  "**/node_modules/**",
+  "**/dist/**",
+  "**/coverage/**",
+  "**/_local/**",
+  // Config/lock files are structurally similar by nature — not meaningful clones.
+  "**/package.json",
+  "**/package-lock.json",
+  "**/npm-shrinkwrap.json",
+  "**/pnpm-lock.yaml",
+  "**/yarn.lock",
+];
 
 interface DuplicationConfig {
   readonly bin: string;
