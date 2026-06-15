@@ -1,0 +1,17 @@
+{
+  "name": "@code-analyzers/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "code-analyzers": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@code-analyzers/core": "workspace:*",
+    "@code-analyzers/lib": "workspace:*"
+  }
+}
