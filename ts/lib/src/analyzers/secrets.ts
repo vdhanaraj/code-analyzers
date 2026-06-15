@@ -132,13 +132,17 @@ export function createSecretsAnalyzer(config: Readonly<Record<string, unknown>>)
           if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
         }
         if (raw === undefined) {
-          // No report + non-zero exit is a broken run. stderr is suppressed for
-          // secrets — it could echo a matched secret.
+          // No report + non-zero exit is a broken run (gitleaks didn't scan —
+          // bad subcommand/flag/version). Since nothing was scanned, stderr holds
+          // a usage/error message, not matched secrets, so it's safe to surface
+          // here (and it's what's needed to debug). The redacted findings path
+          // below never exposes stderr.
           if (execResult.code !== 0) {
             return erroredResult(
               ID,
               VERSION,
-              `gitleaks exited with code ${execResult.code} and wrote no report`,
+              `gitleaks exited with code ${execResult.code} and wrote no report (run: ${cfg.bin} dir ${cfg.path} …)`,
+              { stderr: execResult.stderr },
             );
           }
           return EMPTY_RESULT(ctx);
