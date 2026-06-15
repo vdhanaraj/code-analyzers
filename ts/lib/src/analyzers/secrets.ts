@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Analyzer, AnalyzerContext, AnalyzerResult, SarifResult } from "@code-analyzers/core";
@@ -22,10 +23,24 @@ const DEFAULT_BIN = "gitleaks";
 const ID = "secrets";
 const HELP_URL = "https://github.com/gitleaks/gitleaks#installing";
 
+// Generated/vendored paths we skip by default. gitleaks `--no-git` ignores
+// .gitignore, so without this it scans dist/, coverage/, node_modules/ — noise,
+// not source. Regexes matched against the file path (gitleaks allowlist.paths).
+const DEFAULT_IGNORE = [
+  "(^|/)node_modules/",
+  "(^|/)dist/",
+  "(^|/)build/",
+  "(^|/)coverage/",
+  "(^|/)_local/",
+  "(^|/)\\.git/",
+];
+const REPO_CONFIGS = ["gitleaks.toml", ".gitleaks.toml"];
+
 interface SecretsConfig {
   readonly bin: string;
   readonly cwd: string;
   readonly path: string;
+  readonly ignore: readonly string[];
   /** Full arg override; `{report}` is replaced with our temp report path. */
   readonly args?: readonly string[];
 }
@@ -38,25 +53,45 @@ function parseConfig(
     bin: typeof config.bin === "string" ? config.bin : DEFAULT_BIN,
     cwd: typeof config.cwd === "string" ? config.cwd : ctx.repoRoot,
     path: typeof config.path === "string" ? config.path : ".",
+    ignore:
+      Array.isArray(config.ignore) && config.ignore.every((p) => typeof p === "string")
+        ? (config.ignore as string[])
+        : DEFAULT_IGNORE,
     ...(Array.isArray(config.args) && config.args.every((a) => typeof a === "string")
       ? { args: config.args as string[] }
       : {}),
   };
 }
 
+/** Does the repo ship its own gitleaks config (which we then respect)? */
+function repoHasGitleaksConfig(cwd: string, repoRoot: string): boolean {
+  return REPO_CONFIGS.some((n) => existsSync(join(cwd, n)) || existsSync(join(repoRoot, n)));
+}
+
+/**
+ * A gitleaks config that keeps the full default ruleset (`extend.useDefault`)
+ * and adds our path allowlist. Injected only when the repo has no config of its
+ * own. TOML literal strings ('') so regex backslashes aren't escaped.
+ */
+export function gitleaksConfig(ignore: readonly string[]): string {
+  const paths = ignore.map((r) => `  '${r}',`).join("\n");
+  return `[extend]\nuseDefault = true\n\n[allowlist]\npaths = [\n${paths}\n]\n`;
+}
+
 /**
  * Default gitleaks invocation. Uses `detect --source … --no-git`, the portable
  * filesystem-scan form (the newer `dir` subcommand doesn't exist in older
- * gitleaks). Override with `args` (config `{report}` placeholder) for other
- * versions/CLIs.
+ * gitleaks). `configPath` injects our default-extending allowlist. Override the
+ * whole thing with `args` (config `{report}` placeholder) for other versions.
  */
-function gitleaksArgs(cfg: SecretsConfig, reportPath: string): string[] {
+function gitleaksArgs(cfg: SecretsConfig, reportPath: string, configPath?: string): string[] {
   if (cfg.args) return cfg.args.map((a) => a.replaceAll("{report}", reportPath));
   return [
     "detect",
     "--source",
     cfg.path,
     "--no-git",
+    ...(configPath ? ["--config", configPath] : []),
     "--report-format",
     "sarif",
     "--report-path",
@@ -130,9 +165,18 @@ export function createSecretsAnalyzer(config: Readonly<Record<string, unknown>>)
       const outDir = await mkdtemp(join(tmpdir(), "ca-gitleaks-"));
       const outFile = join(outDir, "gitleaks.sarif");
       try {
+        // Inject our default-extending allowlist only when the repo has no
+        // gitleaks config of its own and the user hasn't fully overridden args.
+        let configPath: string | undefined;
+        if (!cfg.args && !repoHasGitleaksConfig(cfg.cwd, ctx.repoRoot)) {
+          configPath = join(outDir, "gitleaks.toml");
+          await writeFile(configPath, gitleaksConfig(cfg.ignore));
+        }
         let execResult: Awaited<ReturnType<typeof exec>>;
         try {
-          execResult = await exec(cfg.bin, gitleaksArgs(cfg, outFile), { cwd: cfg.cwd });
+          execResult = await exec(cfg.bin, gitleaksArgs(cfg, outFile, configPath), {
+            cwd: cfg.cwd,
+          });
         } catch (e) {
           if (e instanceof CommandNotFoundError)
             return unavailableResult(ID, VERSION, cfg.bin, HELP_URL);

@@ -121,6 +121,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   set(secrets, "bin", "secrets-bin");
   set(secrets, "cwd", "secrets-cwd");
   set(secrets, "path", "secrets-path");
+  set(secrets, "ignore", "secrets-ignore", true);
   set(secrets, "args", "secrets-args", true);
   const vulnerabilities: Record<string, unknown> = {};
   set(vulnerabilities, "bin", "vuln-bin");
@@ -210,6 +211,8 @@ OPTIONS
   secrets:         --secrets-bin <path>  gitleaks binary (default: "gitleaks")
   (gitleaks)       --secrets-cwd <path>  working dir (default: repo)
                    --secrets-path <p>    path to scan (default: ".")
+                   --secrets-ignore <list> path regexes to skip (default: generated dirs);
+                                           ignored if the repo has its own gitleaks.toml
                    --secrets-args <list> override gitleaks args ({report} = output path);
                                            default: detect --source <path> --no-git …
   vulnerabilities: --vuln-bin <path>     osv-scanner binary (default: "osv-scanner")

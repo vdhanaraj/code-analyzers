@@ -1,6 +1,6 @@
 import type { AnalyzerContext } from "@code-analyzers/core";
 import { describe, expect, it } from "vitest";
-import { buildSecretsResult, redactSecretResult } from "./secrets.js";
+import { buildSecretsResult, gitleaksConfig, redactSecretResult } from "./secrets.js";
 
 const ctx: AnalyzerContext = { repoRoot: "/repo", repo: "demo" };
 
@@ -52,6 +52,14 @@ describe("secrets analyzer (gitleaks)", () => {
     expect(out.method).toBe("deterministic");
     expect(out.externalReferences).toBeUndefined();
     expect(out.measurements.find((m) => m.name === "secrets.findings")?.value).toBe(1);
+  });
+
+  it("gitleaksConfig keeps the default ruleset and allowlists generated dirs", () => {
+    const toml = gitleaksConfig(["(^|/)dist/", "(^|/)coverage/"]);
+    expect(toml).toContain("useDefault = true"); // keeps all secret rules
+    expect(toml).toContain("[allowlist]");
+    expect(toml).toContain("'(^|/)dist/'");
+    expect(toml).toContain("'(^|/)coverage/'");
   });
 
   it("redactSecretResult never copies the message or properties verbatim", () => {
