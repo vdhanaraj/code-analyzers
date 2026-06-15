@@ -121,6 +121,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   set(secrets, "bin", "secrets-bin");
   set(secrets, "cwd", "secrets-cwd");
   set(secrets, "path", "secrets-path");
+  set(secrets, "args", "secrets-args", true);
   const vulnerabilities: Record<string, unknown> = {};
   set(vulnerabilities, "bin", "vuln-bin");
   set(vulnerabilities, "cwd", "vuln-cwd");
@@ -209,6 +210,8 @@ OPTIONS
   secrets:         --secrets-bin <path>  gitleaks binary (default: "gitleaks")
   (gitleaks)       --secrets-cwd <path>  working dir (default: repo)
                    --secrets-path <p>    path to scan (default: ".")
+                   --secrets-args <list> override gitleaks args ({report} = output path);
+                                           default: detect --source <path> --no-git …
   vulnerabilities: --vuln-bin <path>     osv-scanner binary (default: "osv-scanner")
   (osv-scanner)    --vuln-cwd <path>     working dir (default: repo)
                    --vuln-path <p>       path to scan (default: ".")

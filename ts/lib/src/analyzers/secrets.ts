@@ -26,6 +26,8 @@ interface SecretsConfig {
   readonly bin: string;
   readonly cwd: string;
   readonly path: string;
+  /** Full arg override; `{report}` is replaced with our temp report path. */
+  readonly args?: readonly string[];
 }
 
 function parseConfig(
@@ -36,7 +38,31 @@ function parseConfig(
     bin: typeof config.bin === "string" ? config.bin : DEFAULT_BIN,
     cwd: typeof config.cwd === "string" ? config.cwd : ctx.repoRoot,
     path: typeof config.path === "string" ? config.path : ".",
+    ...(Array.isArray(config.args) && config.args.every((a) => typeof a === "string")
+      ? { args: config.args as string[] }
+      : {}),
   };
+}
+
+/**
+ * Default gitleaks invocation. Uses `detect --source … --no-git`, the portable
+ * filesystem-scan form (the newer `dir` subcommand doesn't exist in older
+ * gitleaks). Override with `args` (config `{report}` placeholder) for other
+ * versions/CLIs.
+ */
+function gitleaksArgs(cfg: SecretsConfig, reportPath: string): string[] {
+  if (cfg.args) return cfg.args.map((a) => a.replaceAll("{report}", reportPath));
+  return [
+    "detect",
+    "--source",
+    cfg.path,
+    "--no-git",
+    "--report-format",
+    "sarif",
+    "--report-path",
+    reportPath,
+    "--redact",
+  ];
 }
 
 /** Reconstruct a minimal, secret-free result. Drops properties entirely. */
@@ -106,20 +132,7 @@ export function createSecretsAnalyzer(config: Readonly<Record<string, unknown>>)
       try {
         let execResult: Awaited<ReturnType<typeof exec>>;
         try {
-          execResult = await exec(
-            cfg.bin,
-            [
-              "dir",
-              cfg.path,
-              "--report-format",
-              "sarif",
-              "--report-path",
-              outFile,
-              "--redact",
-              "--no-banner",
-            ],
-            { cwd: cfg.cwd },
-          );
+          execResult = await exec(cfg.bin, gitleaksArgs(cfg, outFile), { cwd: cfg.cwd });
         } catch (e) {
           if (e instanceof CommandNotFoundError)
             return unavailableResult(ID, VERSION, cfg.bin, HELP_URL);
@@ -141,7 +154,7 @@ export function createSecretsAnalyzer(config: Readonly<Record<string, unknown>>)
             return erroredResult(
               ID,
               VERSION,
-              `gitleaks exited with code ${execResult.code} and wrote no report (run: ${cfg.bin} dir ${cfg.path} …)`,
+              `gitleaks exited with code ${execResult.code} and wrote no report — check the gitleaks version/CLI, or set --secrets-args`,
               { stderr: execResult.stderr },
             );
           }
