@@ -12,8 +12,10 @@
     "build": "pnpm -C ts build",
     "typecheck": "pnpm -C ts typecheck",
     "test": "pnpm -C ts test",
+    "coverage": "pnpm -C ts exec vitest run --coverage",
     "lint": "pnpm -C ts lint",
-    "format": "pnpm -C ts format"
+    "format": "pnpm -C ts format",
+    "analyze:self": "pnpm build && pnpm coverage && node ts/cli/dist/index.js . --coverage-report ts/coverage/coverage-final.json --lint-cwd \"$PWD/ts\" --lint-bin \"$PWD/ts/node_modules/.bin/biome\""
   },
   "devDependencies": {
     "lefthook": "^1.10.0"
