@@ -2,6 +2,8 @@
   "name": "code-analyzers",
   "version": "0.0.0",
   "private": true,
+  "license": "Apache-2.0",
+  "author": "Vijay Dhanaraj",
   "type": "module",
   "engines": {
     "node": ">=22"

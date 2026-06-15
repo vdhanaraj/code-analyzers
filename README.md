@@ -62,3 +62,9 @@ explicit `--analyzers` selection fails closed on a missing tool. Example config:
 v1 is a **CLI + library** with no listening services, so it claims **no port block** (see
 [CONVENTIONS.md](CONVENTIONS.md) §Ports — divergence noted in [ARCHITECTURE.md](ARCHITECTURE.md)). If a
 service form (e.g. a future auditing service) is added, it will claim a block here.
+
+## License
+
+[Apache-2.0](LICENSE) © 2026 Vijay Dhanaraj. The wrapped tools (Biome, jscpd, gitleaks,
+osv-scanner, …) are invoked as separate processes under their own licenses; this project does not bundle or
+link them.

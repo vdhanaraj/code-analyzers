@@ -2,6 +2,8 @@
   "name": "code-analyzers-root",
   "version": "0.0.0",
   "private": true,
+  "license": "Apache-2.0",
+  "author": "Vijay Dhanaraj",
   "description": "Repo-root orchestration: git hooks (Lefthook) and per-root pass-throughs. App packages live under ts/ (see CONVENTIONS.md).",
   "engines": {
     "node": ">=22"
